@@ -53,9 +53,6 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
 
-    # Optionnel (désactivé pour API pure)
-    # 'django.middleware.csrf.CsrfViewMiddleware',
-
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -172,3 +169,19 @@ CORS_ALLOW_HEADERS = [
 # SECURITY (Render HTTPS)
 # ===============================
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+
+# ===============================
+# 🔥 AUTO CREATE SUPERUSER
+# ===============================
+from django.contrib.auth import get_user_model
+
+def create_superuser():
+    User = get_user_model()
+
+    if not User.objects.filter(username="admin").exists():
+        User.objects.create_superuser(
+            username="admin",
+            password="admin123",
+            email="admin@test.com"
+        )
