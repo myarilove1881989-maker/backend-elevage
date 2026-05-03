@@ -1,6 +1,13 @@
 from django.contrib import admin
 from django.db.models import Sum
 from .models import Exploitation, Espece, Lot, Mouvement, Depense, Achat
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
+from .models import User
+
+@admin.register(User)
+class CustomUserAdmin(UserAdmin):
+    pass
 
 
 # ===============================
