@@ -38,7 +38,11 @@ from .serializers import (
 # ===============================
 class HasExploitation(BasePermission):
     def has_permission(self, request, view):
-        return bool(request.user and request.user.exploitation)
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and getattr(request.user, "exploitation", None) is not None
+        )
 
 
 # ===============================
@@ -484,7 +488,10 @@ def api_client_ventes(request, client_id):
             "montant_total": float(v.montant_total),
             "montant_paye": float(total_lettre),
             "reste": reste,
-            "statut": statut
+            "statut": statut,
+            # 🔥 AJOUT IMPORTANT
+            "lot_nom": v.lot.nom,
+            "espece": v.lot.espece.nom,
         })
 
     return Response(data)
@@ -779,7 +786,7 @@ def api_delete_depense(request, pk):
 # views.py
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, HasExploitation])
+@permission_classes([])
 def api_create_achat(request):
 
     serializer = AchatSerializer(
