@@ -786,7 +786,7 @@ def api_delete_depense(request, pk):
 # views.py
 
 @api_view(['POST'])
-@permission_classes([])
+@permission_classes([IsAuthenticated])
 def api_create_achat(request):
 
     serializer = AchatSerializer(
@@ -797,23 +797,14 @@ def api_create_achat(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=400)
 
-    try:
-        with transaction.atomic():
-            achat = serializer.save()
+    # 🔥 PAS DE TRY/EXCEPT
+    achat = serializer.save()
 
-        return Response({
-            "success": True,
-            "achat_id": achat.id,
-            "lot_id": achat.lot.id
-        }, status=201)
-
-    except Exception as e:
-        print("🔥 ERREUR DJANGO:", str(e))
-        traceback.print_exc()
-
-        return Response({
-            "error": "Erreur serveur"
-        }, status=500)
+    return Response({
+        "success": True,
+        "achat_id": achat.id,
+        "lot_id": achat.lot.id
+    }, status=201)
 # ===============================
 # DELETE ACHAT (FIX FINAL)
 # ===============================
