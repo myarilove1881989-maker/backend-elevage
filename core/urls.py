@@ -30,6 +30,7 @@ urlpatterns = [
     path('mouvements/', views.api_mouvements),
     path('mouvements/create/', views.api_create_mouvement),
     path('mouvements/delete/<int:pk>/', views.api_delete_mouvement),
+    
 
     # DEPENSES
     path('depenses/', views.api_depenses),

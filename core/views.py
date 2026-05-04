@@ -1,3 +1,5 @@
+from urllib import request
+
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
 from rest_framework.response import Response
@@ -122,7 +124,9 @@ def api_register(request):
 def api_especes(request):
 
     if request.method == 'GET':
-        especes = Espece.objects.all()
+        especes = Espece.objects.filter(
+        exploitation=request.user.exploitation
+)
         data = [{"id": e.id, "nom": e.nom} for e in especes]
         return Response(data)
 
@@ -600,41 +604,6 @@ def api_ca_par_lot(request):
 
     return Response(result)
 
-
-from core.models import User, CategorieDepense
-
-categories = [
-    "Aliment",
-    "Médicament",
-    "Vaccin",
-    "Transport",
-    "Main d'oeuvre",
-    "Chauffage",
-    "Entretien",
-    "Maintenance",
-    "Impôts",
-    "Taxes",
-    "Autre"
-]
-
-for user in User.objects.all():
-    exp = user.exploitation
-
-    for nom in categories:
-        exists = CategorieDepense.objects.filter(
-            nom=nom,
-            exploitation=exp
-        ).exists()
-
-        if not exists:
-            CategorieDepense.objects.create(
-                nom=nom,
-                exploitation=exp
-            )
-
-print("✅ Catégories créées")
-
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
 def api_marge_par_lot(request):
@@ -707,6 +676,10 @@ def api_mouvements(request):
     )
     return Response(MouvementSerializer(mouvements, many=True).data)
 
+# ===============================
+# DEPENSES (FIX)
+# ===============================
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
 def api_depenses(request):
@@ -715,6 +688,9 @@ def api_depenses(request):
     ).order_by('-date')
     return Response(DepenseSerializer(depenses, many=True).data)
 
+# ===============================
+# ACHATS (FIX)
+# ===============================
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
@@ -724,6 +700,28 @@ def api_achats(request):
     ).order_by('-date')
     return Response(AchatSerializer(achats, many=True).data)
 
+# ===============================
+# DEPENSES DETAILS (FIX)
+# ===============================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, HasExploitation])
+def api_depenses_detail(request):
+    lot_id = request.GET.get("lot")
+
+    data = (
+        Depense.objects
+        .filter(
+            lot_id=lot_id,
+            lot__exploitation=request.user.exploitation
+        )
+        .values('categorie__nom')
+        .annotate(total=Sum('montant'))
+        .order_by('-total')
+    )
+
+    return Response(data)
+
 
 # ===============================
 # CATEGORIES (FIX)
@@ -732,8 +730,8 @@ def api_achats(request):
 @permission_classes([IsAuthenticated, HasExploitation])
 def api_categories_depense(request):
 
-    print("USER API:", request.user)
-    print("EXPLOITATION API:", request.user.exploitation)
+    print("USER:", request.user.username)
+    print("EXPLOITATION:", request.user.exploitation.id)
 
     categories = CategorieDepense.objects.filter(
         exploitation=request.user.exploitation
@@ -742,9 +740,8 @@ def api_categories_depense(request):
     print("NB CATEGORIES:", categories.count())
 
     data = [{"id": c.id, "nom": c.nom} for c in categories]
-    return Response({
-    "debug": "OK V2",
-})
+
+    return Response(data)  # ✅ IMPORTANT
 # ===============================
 # CREATE DEPENSE (FIX)
 # ===============================
@@ -770,7 +767,7 @@ def api_create_depense(request):
     if serializer.is_valid():
         serializer.save(
             lot=lot,
-            categorie_id=request.data.get("categorie")
+            categorie=categorie
         )
         return Response(serializer.data, status=201)
 
@@ -802,7 +799,7 @@ def api_delete_depense(request, pk):
 # views.py
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_create_achat(request):
     print("🔥 CREATE ACHAT CALLED")
 
