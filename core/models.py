@@ -71,14 +71,19 @@ class Lot(models.Model):
 
     date_creation = models.DateTimeField(auto_now_add=True)
 
+    # ✅ AJOUT ICI (FIX ERREUR)
+    created_by = models.ForeignKey(
+        "User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+
     def __str__(self):
         return f"{self.nom} - {self.espece.nom}"
 
-    # 🔥 STOCK ACTUEL (déjà parfait chez toi)
     @property
     def stock(self):
-        from django.db.models import Sum
-
         result = self.mouvements.aggregate(
             total=Sum('quantite_signee')
         )
@@ -86,7 +91,7 @@ class Lot(models.Model):
 
 
 # ===============================
-# MOUVEMENT (stock uniquement)
+# MOUVEMENT
 # ===============================
 
 class Mouvement(models.Model):
@@ -106,6 +111,8 @@ class Mouvement(models.Model):
 
     client = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, blank=True)
 
+    exploitation = models.ForeignKey("Exploitation", on_delete=models.CASCADE, null=True)
+    created_by = models.ForeignKey("User", on_delete=models.SET_NULL, null=True)
 
     date = models.DateField(default=now)
 
@@ -117,13 +124,11 @@ class Mouvement(models.Model):
 
     def save(self, *args, **kwargs):
 
-        # 🔁 quantité signée
         if self.type_mouvement == 'ACHAT':
             self.quantite_signee = abs(self.quantite)
         else:
             self.quantite_signee = -abs(self.quantite)
 
-        # 💰 montant
         if self.prix_unitaire is not None:
             self.montant_total = self.quantite * self.prix_unitaire
 
@@ -152,15 +157,9 @@ class Vente(models.Model):
         self.montant_total = self.quantite * self.prix_unitaire
         super().save(*args, **kwargs)
 
-    # ===============================
-    # 💰 SUIVI PAIEMENT (LETTRAGE)
-    # ===============================
-
     @property
     def montant_paye(self):
-        return self.lettrages.aggregate(
-            total=Sum('montant')
-        )['total'] or 0
+        return self.lettrages.aggregate(total=Sum('montant'))['total'] or 0
 
     @property
     def reste_a_payer(self):
@@ -203,7 +202,7 @@ class Depense(models.Model):
     date = models.DateField(default=now)
     montant = models.DecimalField(max_digits=12, decimal_places=2)
 
-    note = models.CharField(max_length=255, blank=True, null=True)  # ✅ AJOUT IMPORTANT
+    note = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
         return f"{self.categorie} - {self.montant}"
@@ -225,22 +224,20 @@ class Achat(models.Model):
     date = models.DateField()
     note = models.TextField(blank=True, null=True)
 
-    created_by = models.ForeignKey(
-        "User",
-        on_delete=models.SET_NULL,
-        null=True
-    )
+    created_by = models.ForeignKey("User", on_delete=models.SET_NULL, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"Achat {self.lot} - {self.quantite}"
+
+
+# ===============================
+# TASK
+# ===============================
+
 class Task(models.Model):
-    exploitation = models.ForeignKey(
-        Exploitation,
-        on_delete=models.CASCADE,
-        related_name="tasks"
-    )
+    exploitation = models.ForeignKey(Exploitation, on_delete=models.CASCADE, related_name="tasks")
 
     title = models.CharField(max_length=255)
     date = models.DateField()
@@ -250,13 +247,30 @@ class Task(models.Model):
     def __str__(self):
         return self.title
 
+
+# ===============================
+# CLIENT
+# ===============================
+
 class Client(models.Model):
     nom = models.CharField(max_length=255)
     telephone = models.CharField(max_length=20, blank=True)
 
+    exploitation = models.ForeignKey(
+        Exploitation,
+        on_delete=models.CASCADE,
+        null=True,
+        related_name="clients"
+    )
+
     def __str__(self):
         return self.nom
-    
+
+
+# ===============================
+# PAYMENT
+# ===============================
+
 class Payment(models.Model):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="payments")
     montant = models.FloatField()
@@ -269,6 +283,11 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"{self.client.nom} - {self.montant}"
+
+
+# ===============================
+# LETTRAGE
+# ===============================
 
 class Lettrage(models.Model):
     vente = models.ForeignKey("Vente", on_delete=models.CASCADE, related_name="lettrages")

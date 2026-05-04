@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-
 from .models import (
+    CategorieDepense,
     Task,
     Client,
     Achat,
@@ -9,7 +9,8 @@ from .models import (
     Mouvement,
     Espece,
     Depense,
-    Vente
+    Vente,
+    Exploitation,
 )
 
 User = get_user_model()
@@ -44,10 +45,40 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ("username", "password")
 
     def create(self, validated_data):
+        # ✅ création user
         user = User.objects.create_user(
             username=validated_data["username"],
             password=validated_data["password"],
         )
+
+        # ✅ création exploitation automatique
+        exploitation = Exploitation.objects.create(
+            nom=f"Ferme de {user.username}",
+            proprietaire=user
+        )
+
+        # ✅ lien user → exploitation
+        user.exploitation = exploitation
+        user.save()
+
+        # 🔥 AJOUT ICI
+        categories = [
+            "Aliment",
+            "Médicament",
+            "Vaccin",
+            "Transport",
+            "Main d'oeuvre",
+            "Autre"
+        ]
+
+        from .models import CategorieDepense
+
+        for nom in categories:
+            CategorieDepense.objects.create(
+            nom=nom,
+            exploitation=exploitation
+        )
+
         return user
 
 
@@ -150,10 +181,19 @@ class VenteSerializer(serializers.ModelSerializer):
 # ===============================
 # ACHAT
 # ===============================
+# serializers.py
+
+# ===============================
+# ACHAT
+# ===============================
 class AchatSerializer(serializers.ModelSerializer):
 
     nom_lot = serializers.CharField(write_only=True)
     espece = serializers.IntegerField(write_only=True)
+
+    # ✅ rendre optionnel (corrige ton bug)
+    fournisseur = serializers.CharField(required=False, allow_blank=True)
+    note = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = Achat
@@ -175,37 +215,64 @@ class AchatSerializer(serializers.ModelSerializer):
         nom_lot = validated_data.pop("nom_lot")
         espece_id = validated_data.pop("espece")
 
-        espece = Espece.objects.get(id=espece_id)
+        # ✅ valeurs optionnelles
+        fournisseur = validated_data.pop("fournisseur", "")
+        note = validated_data.pop("note", "")
 
+        # ===============================
+        # VALIDATION
+        # ===============================
+        try:
+            espece = Espece.objects.get(id=espece_id)
+        except Espece.DoesNotExist:
+            raise serializers.ValidationError("Espèce invalide")
+
+        if validated_data.get("quantite", 0) <= 0:
+            raise serializers.ValidationError("Quantité invalide")
+
+        if validated_data.get("prix_total", 0) <= 0:
+            raise serializers.ValidationError("Prix total invalide")
+
+        date_achat = validated_data.get("date")
+        if not date_achat:
+            raise serializers.ValidationError("Date requise")
+
+        # ===============================
+        # CREATE LOT
+        # ===============================
         lot = Lot.objects.create(
             nom=nom_lot,
             espece=espece,
             exploitation=user.exploitation,
-            date_debut=validated_data["date"]
+            date_debut=date_achat
         )
 
+        # ===============================
+        # CREATE ACHAT
+        # ===============================
         achat = Achat.objects.create(
             lot=lot,
             exploitation=user.exploitation,
             created_by=user,
-            quantite=validated_data.get("quantite", 0),
-            prix_total=validated_data.get("prix_total", 0),
-            prix_unitaire=validated_data.get("prix_unitaire", 0),
-            date=validated_data.get("date"),
-            fournisseur=validated_data.get("fournisseur"),
-            note=validated_data.get("note"),
+            fournisseur=fournisseur,
+            note=note,
+            **validated_data
         )
 
+        # ===============================
+        # CREATE MOUVEMENT
+        # ===============================
         Mouvement.objects.create(
             lot=lot,
-            type_mouvement='ACHAT',
+            type_mouvement="ACHAT",
             quantite=achat.quantite,
-            date=achat.date
+            date=achat.date,
+            prix_unitaire=achat.prix_unitaire,
+            exploitation=user.exploitation,
+            created_by=user
         )
 
         return achat
-
-
 # ===============================
 # ANALYTICS
 # ===============================

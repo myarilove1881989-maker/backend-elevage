@@ -1,10 +1,10 @@
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
 from rest_framework.response import Response
-from .models import Client
-from .serializers import ClientSerializer
 from rest_framework.viewsets import ModelViewSet
-from rest_framework.permissions import IsAuthenticated
+
+from django.db import transaction
+import traceback
 
 # Django ORM
 from django.db.models import (
@@ -19,7 +19,7 @@ from datetime import timedelta
 
 from .models import (
     Lot, Mouvement, Depense, Vente, Achat, Espece,
-    CategorieDepense
+    CategorieDepense, Client, Task, Payment, Lettrage
 )
 
 from .serializers import (
@@ -28,28 +28,47 @@ from .serializers import (
     MouvementSerializer,
     DepenseSerializer,
     AchatSerializer,
-    LotDetailSerializer
+    LotDetailSerializer,
+    ClientSerializer,
+    TaskSerializer
 )
-from .models import Task
-from .serializers import TaskSerializer
-from .models import Payment, Lettrage
+
+# ===============================
+# 🔐 PERMISSION CUSTOM
+# ===============================
+class HasExploitation(BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.exploitation)
 
 
+# ===============================
+# LOT VIEWSET
+# ===============================
+class LotViewSet(ModelViewSet):
+    queryset = Lot.objects.all()
+    serializer_class = LotSerializer
+    permission_classes = [IsAuthenticated, HasExploitation]  # 🔥 AJOUT
+
+    def get_queryset(self):
+        return Lot.objects.filter(exploitation=self.request.user.exploitation)
+
+    def perform_create(self, serializer):
+        serializer.save(exploitation=self.request.user.exploitation)
+
+
+# ===============================
+# TASK VIEWSET
+# ===============================
 class TaskViewSet(ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasExploitation]  # 🔥 AJOUT
 
     def get_queryset(self):
-        return Task.objects.filter(
-            exploitation=self.request.user.exploitation
-        )
+        return Task.objects.filter(exploitation=self.request.user.exploitation)
 
     def perform_create(self, serializer):
-        serializer.save(
-            exploitation=self.request.user.exploitation
-        )
-
+        serializer.save(exploitation=self.request.user.exploitation)
 # ===============================
 # UTILS (STOCK)
 # ===============================
@@ -68,8 +87,11 @@ def get_lot_stock(lot):
     return total_achats - total_sorties
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated, HasExploitation])
 def client_list(request):
-    clients = Client.objects.all()
+    clients = Client.objects.filter(
+        exploitation=request.user.exploitation
+    )
     serializer = ClientSerializer(clients, many=True)
     return Response(serializer.data)
 
@@ -92,7 +114,7 @@ def api_register(request):
 # ESPECES
 # ===============================
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_especes(request):
 
     if request.method == 'GET':
@@ -118,7 +140,7 @@ def api_especes(request):
 # DASHBOARD
 # ===============================
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_dashboard(request):
 
     exploitation = request.user.exploitation
@@ -164,7 +186,7 @@ def api_dashboard(request):
 # LOT DETAIL
 # ===============================
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_lot_detail(request, pk):
 
     try:
@@ -204,7 +226,7 @@ def api_lot_detail(request, pk):
 # CREATE MOUVEMENT
 # ===============================
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_create_mouvement(request):
 
     lot_id = request.data.get("lot")
@@ -220,52 +242,58 @@ def api_create_mouvement(request):
     if lot.exploitation != request.user.exploitation:
         return Response({"error": "Accès interdit"}, status=403)
 
-    quantite = int(request.data.get("quantite", 0))
+    try:
+        quantite = int(request.data.get("quantite", 0))
+    except (TypeError, ValueError):
+        return Response({"error": "Quantité invalide"}, status=400)
+
     type_mouvement = request.data.get("type_mouvement")
 
-    # ✅ VALIDATION CLIENT POUR VENTE
-    if type_mouvement == "VENTE" and not request.data.get("client"):
-        return Response({"error": "Client obligatoire pour une vente"}, status=400)
+    if type_mouvement not in ["ACHAT", "VENTE", "MORTALITE", "DON", "VOL"]:
+        return Response({"error": "Type invalide"}, status=400)
 
-    # ✅ CHECK STOCK
     stock = get_lot_stock(lot)
-    if quantite > stock:
+    if type_mouvement != "ACHAT" and quantite > stock:
         return Response({"error": f"Stock insuffisant ({stock})"}, status=400)
 
     serializer = MouvementSerializer(data=request.data)
 
-    if serializer.is_valid():
-        mouvement = serializer.save(lot=lot)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=400)
 
-        # ================= VENTE =================
-        if mouvement.type_mouvement == "VENTE":
-            prix_unitaire = float(request.data.get("prix_unitaire", 0))
-            client_id = request.data.get("client")
+    mouvement = serializer.save(
+        lot=lot,
+        exploitation=request.user.exploitation,
+        created_by=request.user
+    )
 
-            print("CLIENT ID RECU:", client_id)
-
-            try:
-                client = Client.objects.get(id=int(client_id))
-            except (Client.DoesNotExist, ValueError, TypeError):
-                return Response({"error": "Client invalide"}, status=400)
-
-            Vente.objects.create(
-                lot=lot,
-                client=client,
-                quantite=mouvement.quantite,
-                prix_unitaire=prix_unitaire,
-                montant_total=prix_unitaire * mouvement.quantite,
-                date=mouvement.date
+    # 🔥 GESTION VENTE
+    if mouvement.type_mouvement == "VENTE":
+        try:
+            client = Client.objects.get(
+                id=request.data.get("client"),
+                exploitation=request.user.exploitation
             )
+        except Client.DoesNotExist:
+            return Response({"error": "Client invalide"}, status=400)
 
-        return Response(serializer.data, status=201)
+        prix_unitaire = float(request.data.get("prix_unitaire", 0))
 
-    return Response(serializer.errors, status=400)
+        Vente.objects.create(
+            lot=lot,
+            client=client,
+            quantite=mouvement.quantite,
+            prix_unitaire=prix_unitaire,
+            montant_total=prix_unitaire * mouvement.quantite,
+            date=mouvement.date
+        )
+
+    return Response(serializer.data, status=201)
 # ===============================
 # DELETE MOUVEMENT
 # ===============================
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_delete_mouvement(request, pk):
 
     try:
@@ -343,11 +371,14 @@ def auto_lettrage(client, payment):
 # CLIENT BALANCE API
 # ===============================
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_client_balance(request, client_id):
 
     try:
-        client = Client.objects.get(id=client_id)
+        client = Client.objects.get(
+            id=client_id,
+            exploitation=request.user.exploitation
+        )
     except Client.DoesNotExist:
         return Response({"error": "Client introuvable"}, status=404)
 
@@ -363,7 +394,7 @@ def api_client_balance(request, client_id):
 # CREATE PAYMENT + LETTRAGE
 # ===============================
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_create_payment(request):
 
     client_id = request.data.get("client")
@@ -373,11 +404,16 @@ def api_create_payment(request):
         return Response({"error": "Client et montant requis"}, status=400)
 
     try:
-        client = Client.objects.get(id=client_id)
+        client = Client.objects.get(
+            id=client_id,
+            exploitation=request.user.exploitation
+        )
     except Client.DoesNotExist:
         return Response({"error": "Client introuvable"}, status=404)
-
-    montant = float(montant)
+    try:
+        montant = float(montant)
+    except (TypeError, ValueError):
+        return Response({"error": "Montant invalide"}, status=400)
 
     # 🔥 CHECK DETTE
     balance = get_client_balance(client)
@@ -408,15 +444,21 @@ def api_create_payment(request):
 # LIST VENTES CLIENT 🔥
 # ===============================
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_client_ventes(request, client_id):
 
     try:
-        client = Client.objects.get(id=client_id)
+        client = Client.objects.get(
+            id=client_id,
+            exploitation=request.user.exploitation
+        )
     except Client.DoesNotExist:
         return Response({"error": "Client introuvable"}, status=404)
 
-    ventes = Vente.objects.filter(client=client).order_by("-date")
+    ventes = Vente.objects.filter(
+    client=client,
+    lot__exploitation=request.user.exploitation
+    ).order_by("-date")
 
     data = []
 
@@ -451,19 +493,19 @@ def api_client_ventes(request, client_id):
 # ===============================
 # CREATE PAYMENT
 # ===============================
-from .models import Payment  # 🔥 IMPORTANT
-
-
 
 # ===============================
 # LIST PAYMENTS CLIENT
 # ===============================
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_client_payments(request, client_id):
 
     try:
-        client = Client.objects.get(id=client_id)
+        client = Client.objects.get(
+            id=client_id,
+            exploitation=request.user.exploitation
+        )
     except Client.DoesNotExist:
         return Response({"error": "Client introuvable"}, status=404)
 
@@ -487,11 +529,16 @@ def api_client_payments(request, client_id):
 # ===============================
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_stock_detail(request):
     lot_id = request.GET.get("lot")
-
-    mouvements = Mouvement.objects.filter(lot_id=lot_id)
+    if not lot_id:
+        return Response({"error": "Lot requis"}, status=400)
+    
+    mouvements = Mouvement.objects.filter(
+    lot_id=lot_id,
+    lot__exploitation=request.user.exploitation
+)
 
     data = mouvements.aggregate(
         stock_initial=Sum(Case(When(type_mouvement='ACHAT', then=F('quantite')))),
@@ -508,11 +555,14 @@ def api_stock_detail(request):
     return Response(data)
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_ca_par_lot(request):
     espece = request.GET.get("espece")
 
-    lots = Lot.objects.filter(espece_id=espece)
+    lots = Lot.objects.filter(
+    espece_id=espece,
+    exploitation=request.user.exploitation
+)
 
     result = []
 
@@ -545,13 +595,16 @@ def api_ca_par_lot(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_depenses_detail(request):
     lot_id = request.GET.get("lot")
 
     data = (
         Depense.objects
-        .filter(lot_id=lot_id)
+        .filter(
+            lot_id=lot_id,
+            lot__exploitation=request.user.exploitation
+        )
         .values('categorie__nom')
         .annotate(total=Sum('montant'))
         .order_by('-total')
@@ -569,13 +622,16 @@ def api_depenses_detail(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_marge_par_lot(request):
     espece = request.GET.get("espece")
 
     data = (
         Lot.objects
-        .filter(espece_id=espece)
+        .filter(
+            espece_id=espece,
+            exploitation=request.user.exploitation
+        )
         .annotate(
             total_ca=Coalesce(
                 Sum('ventes__montant_total'),
@@ -623,14 +679,14 @@ def api_marge_par_lot(request):
 # LISTES (FIX FINAL - NE CASSE RIEN)
 # ===============================
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_lots(request):
     lots = Lot.objects.filter(exploitation=request.user.exploitation)
     return Response(LotSerializer(lots, many=True).data)
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_mouvements(request):
     mouvements = Mouvement.objects.filter(
         lot__exploitation=request.user.exploitation
@@ -638,7 +694,7 @@ def api_mouvements(request):
     return Response(MouvementSerializer(mouvements, many=True).data)
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_depenses(request):
     depenses = Depense.objects.filter(
         lot__exploitation=request.user.exploitation
@@ -647,7 +703,7 @@ def api_depenses(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_achats(request):
     achats = Achat.objects.filter(
         exploitation=request.user.exploitation
@@ -659,7 +715,7 @@ def api_achats(request):
 # CATEGORIES (FIX)
 # ===============================
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_categories_depense(request):
     categories = CategorieDepense.objects.filter(
         exploitation=request.user.exploitation
@@ -670,7 +726,7 @@ def api_categories_depense(request):
 # CREATE DEPENSE (FIX)
 # ===============================
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_create_depense(request):
 
     lot_id = request.data.get("lot")
@@ -700,7 +756,7 @@ def api_create_depense(request):
 # DELETE DEPENSE (FIX)
 # ===============================
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_delete_depense(request, pk):
 
     try:
@@ -717,8 +773,13 @@ def api_delete_depense(request, pk):
 # ===============================
 # CREATE ACHAT (FIX)
 # ===============================
+# ===============================
+# CREATE ACHAT (FIX FINAL PROPRE)
+# ===============================
+# views.py
+
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_create_achat(request):
 
     serializer = AchatSerializer(
@@ -726,16 +787,31 @@ def api_create_achat(request):
         context={"request": request}
     )
 
-    if serializer.is_valid():
-        achat = serializer.save()
-        return Response(AchatSerializer(achat).data, status=201)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=400)
 
-    return Response(serializer.errors, status=400)
+    try:
+        with transaction.atomic():
+            achat = serializer.save()
+
+        return Response({
+            "success": True,
+            "achat_id": achat.id,
+            "lot_id": achat.lot.id
+        }, status=201)
+
+    except Exception as e:
+        print("🔥 ERREUR DJANGO:", str(e))
+        traceback.print_exc()
+
+        return Response({
+            "error": "Erreur serveur"
+        }, status=500)
 # ===============================
 # DELETE ACHAT (FIX FINAL)
 # ===============================
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_delete_achat(request, pk):
 
     try:
@@ -759,16 +835,19 @@ def api_delete_achat(request, pk):
     return Response({"message": "Lot supprimé avec succès"}, status=200)
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated, HasExploitation])
 def create_client(request):
     nom = request.data.get("nom")
     telephone = request.data.get("telephone")
 
+    # ✅ validation AVANT création
     if not nom or not telephone:
         return Response({"error": "Nom et téléphone obligatoires"}, status=400)
 
     client = Client.objects.create(
         nom=nom,
-        telephone=telephone
+        telephone=telephone,
+        exploitation=request.user.exploitation
     )
 
     return Response({
@@ -776,20 +855,25 @@ def create_client(request):
         "nom": client.nom,
         "telephone": client.telephone
     }, status=201)
-
 # ===============================
 # TOTAL DETTES (FIX FINAL)
 # ===============================
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_total_dettes(request):
 
-    total_ventes = Vente.objects.aggregate(
+    exploitation = request.user.exploitation
+
+    total_ventes = Vente.objects.filter(
+        lot__exploitation=exploitation
+    ).aggregate(
         total=Sum("montant_total")
     )["total"] or 0
 
-    total_payments = Payment.objects.aggregate(
+    total_payments = Payment.objects.filter(
+        exploitation=exploitation
+    ).aggregate(
         total=Sum("montant")
     )["total"] or 0
 
@@ -800,10 +884,9 @@ def api_total_dettes(request):
 # ===============================
 # DETTES CLIENTS (FIX FINAL)
 # ===============================
-from django.db.models import Sum
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_dettes_clients(request):
 
     exploitation = request.user.exploitation
@@ -857,7 +940,7 @@ def api_dettes_clients(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, HasExploitation])
 def api_performance_lots(request):
 
     from django.db.models import Sum, F, Value, Case, When, DecimalField
