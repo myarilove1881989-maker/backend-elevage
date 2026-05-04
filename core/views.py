@@ -601,31 +601,38 @@ def api_ca_par_lot(request):
     return Response(result)
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated, HasExploitation])
-def api_depenses_detail(request):
-    lot_id = request.GET.get("lot")
+from core.models import User, CategorieDepense
 
-    data = (
-        Depense.objects
-        .filter(
-            lot_id=lot_id,
-            lot__exploitation=request.user.exploitation
-        )
-        .values('categorie__nom')
-        .annotate(total=Sum('montant'))
-        .order_by('-total')
-    )
+categories = [
+    "Aliment",
+    "Médicament",
+    "Vaccin",
+    "Transport",
+    "Main d'oeuvre",
+    "Chauffage",
+    "Entretien",
+    "Maintenance",
+    "Impôts",
+    "Taxes",
+    "Autre"
+]
 
-    data = [
-        {
-            "categorie__nom": item["categorie__nom"] or "Sans catégorie",
-            "total": item["total"]
-        }
-        for item in data
-    ]
+for user in User.objects.all():
+    exp = user.exploitation
 
-    return Response(data)
+    for nom in categories:
+        exists = CategorieDepense.objects.filter(
+            nom=nom,
+            exploitation=exp
+        ).exists()
+
+        if not exists:
+            CategorieDepense.objects.create(
+                nom=nom,
+                exploitation=exp
+            )
+
+print("✅ Catégories créées")
 
 
 @api_view(['GET'])
@@ -724,11 +731,20 @@ def api_achats(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
 def api_categories_depense(request):
+
+    print("USER API:", request.user)
+    print("EXPLOITATION API:", request.user.exploitation)
+
     categories = CategorieDepense.objects.filter(
         exploitation=request.user.exploitation
     )
+
+    print("NB CATEGORIES:", categories.count())
+
     data = [{"id": c.id, "nom": c.nom} for c in categories]
-    return Response(data)
+    return Response({
+    "debug": "OK V2",
+})
 # ===============================
 # CREATE DEPENSE (FIX)
 # ===============================
@@ -788,6 +804,7 @@ def api_delete_depense(request, pk):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def api_create_achat(request):
+    print("🔥 CREATE ACHAT CALLED")
 
     serializer = AchatSerializer(
         data=request.data,
@@ -797,14 +814,23 @@ def api_create_achat(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=400)
 
-    # 🔥 PAS DE TRY/EXCEPT
-    achat = serializer.save()
+    try:
+        with transaction.atomic():
+            achat = serializer.save()
 
-    return Response({
-        "success": True,
-        "achat_id": achat.id,
-        "lot_id": achat.lot.id
-    }, status=201)
+        return Response({
+            "success": True,
+            "achat_id": achat.id,
+            "lot_id": achat.lot.id
+        }, status=201)
+
+    except Exception as e:
+        print("🔥 ERREUR CREATE ACHAT:", str(e))
+        traceback.print_exc()
+
+        return Response({
+            "error": str(e)  # 🔥 IMPORTANT pour debug
+        }, status=500)
 # ===============================
 # DELETE ACHAT (FIX FINAL)
 # ===============================
