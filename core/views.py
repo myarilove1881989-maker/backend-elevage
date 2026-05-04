@@ -727,21 +727,8 @@ def api_depenses_detail(request):
 # CATEGORIES (FIX)
 # ===============================
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, HasExploitation])
 def api_categories_depense(request):
-
-    print("USER:", request.user.username)
-    print("EXPLOITATION:", request.user.exploitation.id)
-
-    categories = CategorieDepense.objects.filter(
-        exploitation=request.user.exploitation
-    )
-
-    print("NB CATEGORIES:", categories.count())
-
-    data = [{"id": c.id, "nom": c.nom} for c in categories]
-
-    return Response(data)  # ✅ IMPORTANT
+    return Response({"test": "OK"})
 # ===============================
 # CREATE DEPENSE (FIX)
 # ===============================
