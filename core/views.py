@@ -726,9 +726,15 @@ def api_depenses_detail(request):
 # ===============================
 # CATEGORIES (FIX)
 # ===============================
-@api_view(['GET'])
-def api_categories_depense(request):
-    return Response({"test": "OK"})
+class CategorieDepenseListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        categories = CategorieDepense.objects.filter(
+            exploitation=request.user.exploitation
+        )
+        data = [{"id": c.id, "nom": c.nom} for c in categories]
+        return Response(data)
 # ===============================
 # CREATE DEPENSE (FIX)
 # ===============================
