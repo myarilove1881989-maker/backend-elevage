@@ -36,8 +36,8 @@ urlpatterns = [
     path('depenses/', views.api_depenses),
     path('depenses/create/', views.api_create_depense),
     path('depenses/delete/<int:pk>/', views.api_delete_depense),
-    path('categories-depense/seed/', views.seed_categories),
-
+    
+    
     # ACHATS
     path('achats/', views.api_achats),
     path('achats/create/', views.api_create_achat),
@@ -47,7 +47,7 @@ urlpatterns = [
     path('especes/', views.api_especes),
 
     # CATEGORIES
-    path('categories-depense/', views.CategorieDepenseListView.as_view()),
+    path('categories-depense/', views.api_categories_depense),
 
     # ANALYTICS
     path('stock-detail/', views.api_stock_detail),
