@@ -726,37 +726,14 @@ def api_depenses_detail(request):
 # ===============================
 # CATEGORIES (FIX)
 # ===============================
-@api_view(['POST'])
+@api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
-def seed_categories(request):
-    categories = [
-        "Aliment",
-        "Médicament",
-        "Vaccin",
-        "Transport",
-        "Main d'oeuvre",
-        "Chauffage",
-        "Entretien",
-        "Maintenance",
-        "Impôts",
-        "Taxes",
-        "Autre"
-    ]
-
-    created = []
-
-    for nom in categories:
-        obj, created_flag = CategorieDepense.objects.get_or_create(
-            nom=nom,
-            exploitation=request.user.exploitation
-        )
-        if created_flag:
-            created.append(nom)
-
-    return Response({
-        "message": "Categories ajoutées",
-        "created": created
-    })
+def api_categories_depense(request):
+    categories = CategorieDepense.objects.filter(
+        exploitation=request.user.exploitation
+    )
+    data = [{"id": c.id, "nom": c.nom} for c in categories]
+    return Response(data)
 # ===============================
 # CREATE DEPENSE (FIX)
 # ===============================
