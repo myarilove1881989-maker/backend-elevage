@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework.routers import DefaultRouter
-
+from rest_framework.views import APIView    
 from . import views
 
 # ================= ROUTER =================
@@ -46,7 +46,7 @@ urlpatterns = [
     path('especes/', views.api_especes),
 
     # CATEGORIES
-    path('categories-depense/', views.api_categories_depense),
+    path('categories-depense/', views.CategorieDepenseListView.as_view()),
 
     # ANALYTICS
     path('stock-detail/', views.api_stock_detail),
