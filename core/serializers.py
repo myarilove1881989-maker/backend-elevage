@@ -188,6 +188,11 @@ class VenteSerializer(serializers.ModelSerializer):
 # ===============================
 class AchatSerializer(serializers.ModelSerializer):
 
+    user = self.context["request"].user
+
+    if not getattr(user, "exploitation", None):
+        raise serializers.ValidationError("Utilisateur sans exploitation")
+
     nom_lot = serializers.CharField(write_only=True)
     espece = serializers.IntegerField(write_only=True)
 
