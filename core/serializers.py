@@ -188,15 +188,9 @@ class VenteSerializer(serializers.ModelSerializer):
 # ===============================
 class AchatSerializer(serializers.ModelSerializer):
 
-    user = self.context["request"].user
-
-    if not getattr(user, "exploitation", None):
-        raise serializers.ValidationError("Utilisateur sans exploitation")
-
     nom_lot = serializers.CharField(write_only=True)
     espece = serializers.IntegerField(write_only=True)
 
-    # ✅ rendre optionnel (corrige ton bug)
     fournisseur = serializers.CharField(required=False, allow_blank=True)
     note = serializers.CharField(required=False, allow_blank=True)
 
@@ -217,16 +211,16 @@ class AchatSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         user = self.context["request"].user
 
+        # 🔴 Vérification user exploitation (ICI c’est correct)
+        if not getattr(user, "exploitation", None):
+            raise serializers.ValidationError("Utilisateur sans exploitation")
+
         nom_lot = validated_data.pop("nom_lot")
         espece_id = validated_data.pop("espece")
 
-        # ✅ valeurs optionnelles
         fournisseur = validated_data.pop("fournisseur", "")
         note = validated_data.pop("note", "")
 
-        # ===============================
-        # VALIDATION
-        # ===============================
         try:
             espece = Espece.objects.get(id=espece_id)
         except Espece.DoesNotExist:
@@ -242,9 +236,7 @@ class AchatSerializer(serializers.ModelSerializer):
         if not date_achat:
             raise serializers.ValidationError("Date requise")
 
-        # ===============================
-        # CREATE LOT
-        # ===============================
+        # ✅ Création lot
         lot = Lot.objects.create(
             nom=nom_lot,
             espece=espece,
@@ -252,9 +244,7 @@ class AchatSerializer(serializers.ModelSerializer):
             date_debut=date_achat
         )
 
-        # ===============================
-        # CREATE ACHAT
-        # ===============================
+        # ✅ Création achat
         achat = Achat.objects.create(
             lot=lot,
             exploitation=user.exploitation,
@@ -264,9 +254,7 @@ class AchatSerializer(serializers.ModelSerializer):
             **validated_data
         )
 
-        # ===============================
-        # CREATE MOUVEMENT
-        # ===============================
+        # ✅ Mouvement
         Mouvement.objects.create(
             lot=lot,
             type_mouvement="ACHAT",
