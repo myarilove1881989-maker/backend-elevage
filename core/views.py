@@ -726,15 +726,37 @@ def api_depenses_detail(request):
 # ===============================
 # CATEGORIES (FIX)
 # ===============================
-class CategorieDepenseListView(APIView):
-    permission_classes = [IsAuthenticated]
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, HasExploitation])
+def seed_categories(request):
+    categories = [
+        "Aliment",
+        "Médicament",
+        "Vaccin",
+        "Transport",
+        "Main d'oeuvre",
+        "Chauffage",
+        "Entretien",
+        "Maintenance",
+        "Impôts",
+        "Taxes",
+        "Autre"
+    ]
 
-    def get(self, request):
-        categories = CategorieDepense.objects.filter(
+    created = []
+
+    for nom in categories:
+        obj, created_flag = CategorieDepense.objects.get_or_create(
+            nom=nom,
             exploitation=request.user.exploitation
         )
-        data = [{"id": c.id, "nom": c.nom} for c in categories]
-        return Response(data)
+        if created_flag:
+            created.append(nom)
+
+    return Response({
+        "message": "Categories ajoutées",
+        "created": created
+    })
 # ===============================
 # CREATE DEPENSE (FIX)
 # ===============================
@@ -743,10 +765,15 @@ class CategorieDepenseListView(APIView):
 def api_create_depense(request):
 
     lot_id = request.data.get("lot")
+    categorie_id = request.data.get("categorie")
 
     if not lot_id:
         return Response({"error": "Lot requis"}, status=400)
 
+    if not categorie_id:
+        return Response({"error": "Catégorie requise"}, status=400)
+
+    # 🔎 Vérif LOT
     try:
         lot = Lot.objects.get(id=lot_id)
     except Lot.DoesNotExist:
@@ -755,6 +782,16 @@ def api_create_depense(request):
     if lot.exploitation != request.user.exploitation:
         return Response({"error": "Accès interdit"}, status=403)
 
+    # 🔎 Vérif CATEGORIE
+    try:
+        categorie = CategorieDepense.objects.get(
+            id=categorie_id,
+            exploitation=request.user.exploitation
+        )
+    except CategorieDepense.DoesNotExist:
+        return Response({"error": "Catégorie invalide"}, status=400)
+
+    # 🔎 Serializer
     serializer = DepenseSerializer(data=request.data)
 
     if serializer.is_valid():
