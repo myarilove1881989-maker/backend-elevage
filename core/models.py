@@ -50,6 +50,14 @@ class Exploitation(models.Model):
 class Espece(models.Model):
     nom = models.CharField(max_length=100)
 
+    exploitation = models.ForeignKey(
+        Exploitation,
+        on_delete=models.CASCADE,
+        related_name="especes",
+        null=True,
+        blank=True
+    )
+
     def __str__(self):
         return self.nom
 

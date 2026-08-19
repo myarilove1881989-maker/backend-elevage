@@ -123,20 +123,56 @@ def api_register(request):
 @permission_classes([IsAuthenticated, HasExploitation])
 def api_especes(request):
 
+    exploitation = request.user.exploitation
+
     if request.method == 'GET':
+
         especes = Espece.objects.filter(
-        exploitation=request.user.exploitation
-)
-        data = [{"id": e.id, "nom": e.nom} for e in especes]
+            exploitation=exploitation
+        ).order_by('nom')
+
+        data = [
+            {
+                "id": e.id,
+                "nom": e.nom
+            }
+            for e in especes
+        ]
+
         return Response(data)
 
     if request.method == 'POST':
+
         nom = request.data.get("nom")
 
         if not nom:
-            return Response({"error": "Nom requis"}, status=400)
+            return Response(
+                {"error": "Nom requis"},
+                status=400
+            )
 
-        espece = Espece.objects.create(nom=nom)
+        nom = nom.strip()
+
+        if not nom:
+            return Response(
+                {"error": "Nom requis"},
+                status=400
+            )
+
+        # Évite les doublons dans la même exploitation
+        if Espece.objects.filter(
+            exploitation=exploitation,
+            nom__iexact=nom
+        ).exists():
+            return Response(
+                {"error": "Cette espèce existe déjà"},
+                status=400
+            )
+
+        espece = Espece.objects.create(
+            nom=nom,
+            exploitation=exploitation
+        )
 
         return Response({
             "id": espece.id,
