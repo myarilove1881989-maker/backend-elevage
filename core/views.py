@@ -437,15 +437,24 @@ def api_client_balance(request, client_id):
 # ===============================
 # CREATE PAYMENT + LETTRAGE
 # ===============================
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, HasExploitation])
 def api_create_payment(request):
 
     client_id = request.data.get("client")
+    vente_id = request.data.get("vente")
     montant = request.data.get("montant")
 
     if not client_id or not montant:
-        return Response({"error": "Client et montant requis"}, status=400)
+        return Response(
+            {"error": "Client et montant requis"},
+            status=400
+        )
+
+    # ===============================
+    # CLIENT
+    # ===============================
 
     try:
         client = Client.objects.get(
@@ -453,17 +462,97 @@ def api_create_payment(request):
             exploitation=request.user.exploitation
         )
     except Client.DoesNotExist:
-        return Response({"error": "Client introuvable"}, status=404)
+        return Response(
+            {"error": "Client introuvable"},
+            status=404
+        )
+
+    # ===============================
+    # MONTANT
+    # ===============================
+
     try:
         montant = float(montant)
     except (TypeError, ValueError):
-        return Response({"error": "Montant invalide"}, status=400)
+        return Response(
+            {"error": "Montant invalide"},
+            status=400
+        )
 
-    # 🔥 CHECK DETTE
-    balance = get_client_balance(client)
+    if montant <= 0:
+        return Response(
+            {"error": "Le montant doit être supérieur à zéro"},
+            status=400
+        )
 
-    if montant > balance:
-        return Response({"error": "Montant supérieur à la dette"}, status=400)
+    # ===============================
+    # SI UNE VENTE EST CHOISIE
+    # ===============================
+
+    vente = None
+
+    if vente_id:
+
+        try:
+            vente = Vente.objects.get(
+                id=vente_id,
+                client=client,
+                lot__exploitation=request.user.exploitation
+            )
+        except Vente.DoesNotExist:
+            return Response(
+                {"error": "Vente introuvable ou non associée à ce client"},
+                status=404
+            )
+
+        # Montant déjà affecté à cette vente
+        total_lettrage = vente.lettrages.aggregate(
+            total=Sum('montant')
+        )['total'] or 0
+
+        reste_vente = (
+            float(vente.montant_total)
+            - float(total_lettrage)
+        )
+
+        # ===============================
+        # CHECK RESTE DE LA VENTE
+        # ===============================
+
+        if reste_vente <= 0:
+            return Response(
+                {"error": "Cette vente est déjà entièrement payée"},
+                status=400
+            )
+
+        if montant > reste_vente:
+            return Response(
+                {
+                    "error": (
+                        f"Montant supérieur au reste de cette vente "
+                        f"({reste_vente:.2f} €)"
+                    )
+                },
+                status=400
+            )
+
+    else:
+
+        # ===============================
+        # ANCIEN COMPORTEMENT
+        # ===============================
+
+        balance = get_client_balance(client)
+
+        if montant > balance:
+            return Response(
+                {"error": "Montant supérieur à la dette"},
+                status=400
+            )
+
+    # ===============================
+    # CREATION DU PAIEMENT
+    # ===============================
 
     payment = Payment.objects.create(
         client=client,
@@ -473,13 +562,33 @@ def api_create_payment(request):
         note=request.data.get("note")
     )
 
-    # 🔥 LETTRAGE AUTO
-    auto_lettrage(client, payment)
+    # ===============================
+    # LETTRAGE
+    # ===============================
 
-    return Response({
-        "id": payment.id,
-        "montant": payment.montant
-    }, status=201)
+    if vente:
+
+        # Paiement affecté à LA vente choisie
+        Lettrage.objects.create(
+            vente=vente,
+            payment=payment,
+            montant=montant
+        )
+
+    else:
+
+        # Ancien fonctionnement :
+        # répartition automatique
+        auto_lettrage(client, payment)
+
+    return Response(
+        {
+            "id": payment.id,
+            "montant": payment.montant,
+            "vente": vente.id if vente else None
+        },
+        status=201
+    )
 
 
 # ===============================
