@@ -6,7 +6,16 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.views import APIView 
 from django.db import transaction
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import check_password, make_password
+from django.contrib.auth.password_validation import validate_password
+from django.core import signing
+from django.core.exceptions import ValidationError
+from django.core.mail import send_mail
+from django.utils import timezone
 import traceback
+import secrets
 
 # Django ORM
 from django.db.models import (
@@ -21,7 +30,7 @@ from datetime import timedelta
 
 from .models import (
     Lot, Mouvement, Depense, Vente, Achat, Espece,
-    CategorieDepense, Client, Task, Payment, Lettrage
+    CategorieDepense, Client, Task, Payment, Lettrage, PasswordResetCode
 )
 
 from .serializers import (
@@ -114,6 +123,157 @@ def api_register(request):
         return Response({"message": "Utilisateur créé"}, status=201)
 
     return Response(serializer.errors, status=400)
+
+
+# ===============================
+# PASSWORD RESET
+# ===============================
+PASSWORD_RESET_RESPONSE = {
+    "message": "Si cette adresse est associée à un compte, un code a été envoyé."
+}
+PASSWORD_RESET_SALT = "elevage.password-reset"
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def api_password_reset_request(request):
+    email = str(request.data.get("email", "")).strip().lower()
+    if not email:
+        return Response({"email": "Adresse e-mail requise."}, status=400)
+
+    user = get_user_model().objects.filter(email__iexact=email, is_active=True).first()
+    if user is None:
+        return Response(PASSWORD_RESET_RESPONSE)
+
+    # Un seul envoi par minute pour un même compte.
+    recent_code = PasswordResetCode.objects.filter(
+        user=user,
+        created_at__gte=timezone.now() - timedelta(minutes=1),
+    ).exists()
+    if recent_code:
+        return Response(PASSWORD_RESET_RESPONSE)
+
+    PasswordResetCode.objects.filter(user=user, used_at__isnull=True).update(
+        used_at=timezone.now()
+    )
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    reset_code = PasswordResetCode.objects.create(
+        user=user,
+        code_hash=make_password(code),
+        expires_at=timezone.now() + timedelta(minutes=10),
+    )
+
+    try:
+        send_mail(
+            subject="Code de réinitialisation Elev’Age",
+            message=(
+                f"Votre code de réinitialisation est : {code}\n\n"
+                "Ce code expire dans 10 minutes. Si vous n'êtes pas à l'origine "
+                "de cette demande, ignorez cet e-mail."
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        reset_code.delete()
+        return Response(
+            {"message": "L'envoi de l'e-mail a échoué. Réessayez plus tard."},
+            status=503,
+        )
+
+    return Response(PASSWORD_RESET_RESPONSE)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def api_password_reset_verify(request):
+    email = str(request.data.get("email", "")).strip().lower()
+    code = str(request.data.get("code", "")).strip()
+
+    if not email or len(code) != 6 or not code.isdigit():
+        return Response({"message": "Code invalide ou expiré."}, status=400)
+
+    user = get_user_model().objects.filter(email__iexact=email, is_active=True).first()
+    reset_code = (
+        PasswordResetCode.objects.filter(user=user, used_at__isnull=True)
+        .first()
+        if user
+        else None
+    )
+
+    if (
+        reset_code is None
+        or not reset_code.is_valid
+        or reset_code.attempts >= 5
+    ):
+        return Response({"message": "Code invalide ou expiré."}, status=400)
+
+    if not check_password(code, reset_code.code_hash):
+        reset_code.attempts += 1
+        if reset_code.attempts >= 5:
+            reset_code.used_at = timezone.now()
+            reset_code.save(update_fields=["attempts", "used_at"])
+        else:
+            reset_code.save(update_fields=["attempts"])
+        return Response({"message": "Code invalide ou expiré."}, status=400)
+
+    reset_token = signing.dumps(
+        {"user_id": user.pk, "code_id": reset_code.pk},
+        salt=PASSWORD_RESET_SALT,
+    )
+    return Response({"reset_token": reset_token})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def api_password_reset_confirm(request):
+    email = str(request.data.get("email", "")).strip().lower()
+    reset_token = str(request.data.get("reset_token", "")).strip()
+    new_password = str(request.data.get("new_password", ""))
+
+    if not email or not reset_token or not new_password:
+        return Response({"message": "Informations incomplètes."}, status=400)
+
+    try:
+        payload = signing.loads(
+            reset_token,
+            salt=PASSWORD_RESET_SALT,
+            max_age=600,
+        )
+    except (signing.BadSignature, signing.SignatureExpired):
+        return Response({"message": "Session expirée. Demandez un nouveau code."}, status=400)
+
+    with transaction.atomic():
+        reset_code = (
+            PasswordResetCode.objects.select_for_update()
+            .select_related("user")
+            .filter(pk=payload.get("code_id"), user_id=payload.get("user_id"))
+            .first()
+        )
+
+        if (
+            reset_code is None
+            or not reset_code.is_valid
+            or reset_code.user.email.lower() != email
+        ):
+            return Response(
+                {"message": "Session expirée. Demandez un nouveau code."},
+                status=400,
+            )
+
+        try:
+            validate_password(new_password, user=reset_code.user)
+        except ValidationError as exc:
+            return Response({"new_password": list(exc.messages)}, status=400)
+
+        reset_code.user.set_password(new_password)
+        reset_code.user.save(update_fields=["password"])
+        reset_code.used_at = timezone.now()
+        reset_code.save(update_fields=["used_at"])
+
+    return Response({"message": "Mot de passe modifié avec succès."})
 
 
 # ===============================

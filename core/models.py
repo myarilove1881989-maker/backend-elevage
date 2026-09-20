@@ -316,3 +316,27 @@ class Lettrage(models.Model):
 
     def __str__(self):
         return f"{self.vente.id} ↔ {self.payment.id} ({self.montant})"
+
+
+# ===============================
+# PASSWORD RESET
+# ===============================
+
+class PasswordResetCode(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="password_reset_codes",
+    )
+    code_hash = models.CharField(max_length=128)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    @property
+    def is_valid(self):
+        return self.used_at is None and self.expires_at > now()
