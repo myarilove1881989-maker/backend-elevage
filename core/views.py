@@ -287,9 +287,23 @@ def api_especes(request):
 
     if request.method == 'GET':
 
-        especes = Espece.objects.filter(
+        from .species_catalog import SPECIES_CATALOG, ensure_species_catalog
+
+        ensure_species_catalog(exploitation)
+
+        catalog_order = {
+            name.casefold(): index for index, name in enumerate(SPECIES_CATALOG)
+        }
+
+        especes = list(Espece.objects.filter(
             exploitation=exploitation
-        ).order_by('nom')
+        ))
+        especes.sort(
+            key=lambda item: (
+                catalog_order.get(item.nom.casefold(), len(SPECIES_CATALOG)),
+                item.nom.casefold(),
+            )
+        )
 
         data = [
             {
@@ -303,6 +317,8 @@ def api_especes(request):
 
     if request.method == 'POST':
 
+        from .species_catalog import canonical_species_name
+
         nom = request.data.get("nom")
 
         if not nom:
@@ -311,11 +327,11 @@ def api_especes(request):
                 status=400
             )
 
-        nom = nom.strip()
+        nom = canonical_species_name(nom)
 
         if not nom:
             return Response(
-                {"error": "Nom requis"},
+                {"error": "Espèce non disponible dans la liste officielle"},
                 status=400
             )
 
@@ -324,10 +340,11 @@ def api_especes(request):
             exploitation=exploitation,
             nom__iexact=nom
         ).exists():
-            return Response(
-                {"error": "Cette espèce existe déjà"},
-                status=400
+            espece = Espece.objects.get(
+                exploitation=exploitation,
+                nom__iexact=nom,
             )
+            return Response({"id": espece.id, "nom": espece.nom})
 
         espece = Espece.objects.create(
             nom=nom,
