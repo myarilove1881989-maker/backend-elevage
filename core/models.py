@@ -272,6 +272,8 @@ class Task(models.Model):
 class Client(models.Model):
     nom = models.CharField(max_length=255)
     telephone = models.CharField(max_length=20, blank=True)
+    pays = models.CharField(max_length=2, blank=True, default="")
+    ville = models.CharField(max_length=100, blank=True, default="")
 
     exploitation = models.ForeignKey(
         Exploitation,
