@@ -1189,6 +1189,8 @@ def api_delete_achat(request, pk):
 def create_client(request):
     nom = request.data.get("nom")
     telephone = request.data.get("telephone")
+    pays = str(request.data.get("pays") or "").strip().upper()
+    ville = str(request.data.get("ville") or "").strip()
 
     # ✅ validation AVANT création
     if not nom or not telephone:
@@ -1197,13 +1199,17 @@ def create_client(request):
     client = Client.objects.create(
         nom=nom,
         telephone=telephone,
+        pays=pays[:2],
+        ville=ville[:100],
         exploitation=request.user.exploitation
     )
 
     return Response({
         "id": client.id,
         "nom": client.nom,
-        "telephone": client.telephone
+        "telephone": client.telephone,
+        "pays": client.pays,
+        "ville": client.ville,
     }, status=201)
 # ===============================
 # TOTAL DETTES (FIX FINAL)
