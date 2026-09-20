@@ -12,6 +12,7 @@ from .models import (
     Vente,
     Exploitation,
 )
+from .species_catalog import ensure_species_catalog
 
 User = get_user_model()
 
@@ -79,6 +80,8 @@ class RegisterSerializer(serializers.ModelSerializer):
             nom=nom,
             exploitation=exploitation
         )
+
+        ensure_species_catalog(exploitation)
 
         return user
 
