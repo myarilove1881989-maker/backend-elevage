@@ -39,27 +39,28 @@ class ClientSerializer(serializers.ModelSerializer):
 # ===============================
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    email = serializers.EmailField(required=True)
 
     class Meta:
         model = User
-        fields = ("username", "password")
+        fields = ("username", "email", "password")
+
+    def validate_email(self, value):
+        email = value.strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError("Cette adresse e-mail est déjà utilisée.")
+        return email
 
     def create(self, validated_data):
         # ✅ création user
         user = User.objects.create_user(
             username=validated_data["username"],
+            email=validated_data["email"],
             password=validated_data["password"],
         )
 
-        # ✅ création exploitation automatique
-        exploitation = Exploitation.objects.create(
-            nom=f"Ferme de {user.username}",
-            proprietaire=user
-        )
-
-        # ✅ lien user → exploitation
-        user.exploitation = exploitation
-        user.save()
+        # L'exploitation est créée automatiquement par User.save().
+        exploitation = user.exploitation
 
         # 🔥 AJOUT ICI
         categories = [
