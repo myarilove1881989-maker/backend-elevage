@@ -78,4 +78,5 @@ urlpatterns = [
 
     # PERFORMANCE LOTS
     path("performance-lots/", views.api_performance_lots),
+    path("performance-especes/", views.api_performance_especes),
 ]
