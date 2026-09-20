@@ -18,6 +18,9 @@ urlpatterns = [
     path('register/', views.api_register),
     path('token/', TokenObtainPairView.as_view()),
     path('token/refresh/', TokenRefreshView.as_view()),
+    path('password-reset/request/', views.api_password_reset_request),
+    path('password-reset/verify/', views.api_password_reset_verify),
+    path('password-reset/confirm/', views.api_password_reset_confirm),
 
     # DASHBOARD
     path('dashboard/', views.api_dashboard),
