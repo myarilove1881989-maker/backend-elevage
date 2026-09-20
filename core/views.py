@@ -1337,3 +1337,86 @@ def api_performance_lots(request):
     )
 
     return Response(data)
+
+
+# ===============================
+# PERFORMANCE PAR ESPECE
+# ===============================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, HasExploitation])
+def api_performance_especes(request):
+    """Classement par marge et saisonnalité des ventes par espèce."""
+    from django.db.models.functions import TruncMonth
+
+    exploitation = request.user.exploitation
+    requested_species = request.query_params.get('espece')
+
+    species = Espece.objects.filter(
+        lot__exploitation=exploitation,
+    ).distinct()
+    if requested_species:
+        species = species.filter(pk=requested_species)
+
+    ranking = []
+    monthly_sales = []
+
+    for item in species:
+        lots = Lot.objects.filter(
+            exploitation=exploitation,
+            espece=item,
+        )
+        purchased = Achat.objects.filter(lot__in=lots).aggregate(
+            total=Sum('quantite'),
+        )['total'] or 0
+        sold = Vente.objects.filter(lot__in=lots).aggregate(
+            total=Sum('quantite'),
+        )['total'] or 0
+        revenue = Vente.objects.filter(lot__in=lots).aggregate(
+            total=Sum('montant_total'),
+        )['total'] or 0
+        expenses = Depense.objects.filter(lot__in=lots).aggregate(
+            total=Sum('montant'),
+        )['total'] or 0
+
+        monthly = list(
+            Vente.objects.filter(lot__in=lots)
+            .annotate(month=TruncMonth('date'))
+            .values('month')
+            .annotate(quantity=Sum('quantite'))
+            .order_by('month')
+        )
+        best_month = max(monthly, key=lambda row: row['quantity']) \
+            if monthly else None
+
+        margin = float(revenue) - float(expenses)
+        sell_through = (float(sold) / float(purchased) * 100) \
+            if purchased else 0
+
+        ranking.append({
+            'espece_id': item.id,
+            'espece': item.nom,
+            'marge': margin,
+            'quantite_achetee': purchased,
+            'quantite_vendue': sold,
+            'taux_ecoulement': sell_through,
+            'meilleur_mois': (
+                best_month['month'].strftime('%Y-%m') if best_month else None
+            ),
+            'meilleur_mois_quantite': (
+                best_month['quantity'] if best_month else 0
+            ),
+        })
+
+        monthly_sales.extend({
+            'espece_id': item.id,
+            'espece': item.nom,
+            'mois': row['month'].strftime('%Y-%m'),
+            'quantite': row['quantity'],
+        } for row in monthly)
+
+    ranking.sort(key=lambda row: row['marge'], reverse=True)
+    return Response({
+        'classement': ranking,
+        'ventes_mensuelles': monthly_sales,
+    })
