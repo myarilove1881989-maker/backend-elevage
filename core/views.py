@@ -811,6 +811,7 @@ def api_client_ventes(request, client_id):
             "id": v.id,
             "date": v.date,
             "quantite": v.quantite,
+            "prix_unitaire": float(v.prix_unitaire),
             "montant_total": float(v.montant_total),
             "montant_paye": float(total_lettre),
             "reste": reste,
@@ -818,6 +819,8 @@ def api_client_ventes(request, client_id):
             # 🔥 AJOUT IMPORTANT
             "lot_nom": v.lot.nom,
             "espece": v.lot.espece.nom,
+            "exploitation_id": request.user.exploitation.id,
+            "exploitation_nom": request.user.exploitation.nom,
         })
 
     return Response(data)
