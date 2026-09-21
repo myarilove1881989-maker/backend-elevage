@@ -1,6 +1,9 @@
-from django.contrib import admin
+import csv
+
+from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.db.models import Sum
+from django.http import HttpResponse
 
 from .models import (
     Achat, CategorieDepense, Client, Depense, Espece, Exploitation,
@@ -14,6 +17,44 @@ admin.site.index_title = "Gestion complète des exploitations"
 
 class SuperuserOnlyAdminMixin:
     """Reserve les données globales aux seuls superutilisateurs."""
+
+    actions = ("export_as_csv",)
+
+    @admin.action(description="Exporter les éléments sélectionnés en CSV")
+    def export_as_csv(self, request, queryset):
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        model_name = self.model._meta.model_name
+        response["Content-Disposition"] = f'attachment; filename="{model_name}.csv"'
+        response.write("\ufeff")
+        writer = csv.writer(response, delimiter=";")
+        columns = [name for name in self.get_list_display(request) if name != "action_checkbox"]
+
+        headers = []
+        for name in columns:
+            display_method = getattr(self, name, None)
+            field = self.model._meta.get_field(name) if name in {f.name for f in self.model._meta.fields} else None
+            headers.append(
+                getattr(display_method, "short_description", None)
+                or (field.verbose_name if field else name.replace("_", " ").title())
+            )
+        writer.writerow(headers)
+
+        for obj in queryset:
+            row = []
+            for name in columns:
+                display_method = getattr(self, name, None)
+                value = display_method(obj) if callable(display_method) else getattr(obj, name, "")
+                if callable(value):
+                    value = value()
+                if value is None:
+                    value = ""
+                elif hasattr(value, "isoformat"):
+                    value = value.isoformat()
+                row.append(str(value))
+            writer.writerow(row)
+
+        self.message_user(request, f"{queryset.count()} ligne(s) exportée(s).", messages.SUCCESS)
+        return response
 
     def has_module_permission(self, request):
         return request.user.is_active and request.user.is_superuser
