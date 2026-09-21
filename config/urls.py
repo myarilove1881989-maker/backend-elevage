@@ -3,8 +3,10 @@ from django.urls import path, include
 
 # ✅ IMPORT COMPLET (corrige ton erreur)
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from core.admin_dashboard import superadmin_dashboard
 
 urlpatterns = [
+    path('admin/super-dashboard/', admin.site.admin_view(superadmin_dashboard), name='superadmin-dashboard'),
     path('admin/', admin.site.urls),
 
     # API principale
