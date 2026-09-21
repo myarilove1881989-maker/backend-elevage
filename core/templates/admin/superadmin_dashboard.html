@@ -26,6 +26,7 @@
   <h1>Super administration Elev'Age</h1>
   <p>Vue complète des exploitations, clients, ventes, paiements, lettrages et opérations enregistrés en ligne.</p>
   <div class="actions">
+    <a href="{% url 'admin-export-statistics' %}">Exporter toutes les statistiques (.xlsx)</a>
     <a href="{% url 'admin:index' %}">Administration complète</a>
     <a href="{% url 'admin:core_client_changelist' %}">Clients</a>
     <a href="{% url 'admin:core_payment_changelist' %}">Paiements</a>
