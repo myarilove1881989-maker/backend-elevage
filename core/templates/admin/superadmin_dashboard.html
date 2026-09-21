@@ -3,82 +3,78 @@
 {% block extrastyle %}
 {{ block.super }}
 <style>
-  :root { --navy:#073b5c; --green:#178a5a; --gold:#d49a22; --ink:#173042; --line:#d9e3e7; --soft:#f4f8f6; }
-  #content { padding:28px; }
-  .hero { background:linear-gradient(120deg,var(--navy),#0b6381); color:white; padding:24px; border-radius:18px; margin-bottom:20px; }
-  .hero h1 { color:white; margin:0 0 6px; font-size:26px; }
-  .hero p { margin:0; opacity:.85; }
-  .metrics { display:grid; grid-template-columns:repeat(5,minmax(150px,1fr)); gap:12px; margin-bottom:22px; }
-  .metric { background:white; border:1px solid var(--line); border-radius:14px; padding:16px; border-bottom:4px solid var(--gold); }
-  .metric:nth-child(2) { border-bottom-color:var(--green); }
-  .metric:nth-child(3) { border-bottom-color:#3d7fa1; }
-  .metric:nth-child(4) { border-bottom-color:#a35f42; }
-  .metric:nth-child(5) { border-bottom-color:#6c5aa7; }
-  .metric span { display:block; color:#667985; font-size:12px; margin-bottom:7px; }
-  .metric strong { color:var(--ink); font-size:22px; }
-  .panel { background:white; border:1px solid var(--line); border-radius:16px; overflow:hidden; margin-bottom:22px; }
-  .panel h2 { background:var(--soft); color:var(--navy); padding:14px 16px; margin:0; font-size:17px; }
-  .table-wrap { overflow-x:auto; }
-  table { width:100%; border-collapse:collapse; }
-  th { background:#f8fafb; color:#60727e; font-size:12px; text-align:left; padding:11px 14px; }
-  td { padding:12px 14px; border-top:1px solid #edf1f3; color:var(--ink); }
-  .badge { display:inline-block; border-radius:99px; padding:4px 9px; font-size:11px; font-weight:700; }
-  .yes { background:#e6f5ee; color:#087344; }
-  .no { background:#f4f4f4; color:#68747c; }
-  .muted { color:#788993; font-size:12px; }
-  .actions { margin-top:14px; }
-  .actions a { display:inline-block; background:var(--gold); color:#172f3f !important; padding:9px 13px; border-radius:9px; font-weight:700; margin-right:8px; }
-  @media(max-width:1000px){ .metrics{grid-template-columns:repeat(2,1fr)} }
-  @media(max-width:600px){ #content{padding:14px}.metrics{grid-template-columns:1fr} }
+:root{--navy:#073b5c;--green:#178a5a;--gold:#d49a22;--ink:#173042;--line:#d9e3e7;--soft:#f4f8f6;--danger:#ad3d3d}
+#content{padding:28px}.hero{background:linear-gradient(120deg,var(--navy),#0b6381);color:#fff;padding:24px;border-radius:18px;margin-bottom:20px}
+.hero h1{color:#fff;margin:0 0 6px;font-size:26px}.hero p{margin:0;opacity:.88}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(170px,1fr));gap:12px;margin-bottom:22px}
+.metric{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;border-bottom:4px solid var(--gold)}
+.metric:nth-child(2n){border-bottom-color:var(--green)}.metric:nth-child(3n){border-bottom-color:#3d7fa1}.metric:nth-child(4n){border-bottom-color:#6c5aa7}
+.metric span{display:block;color:#667985;font-size:12px;margin-bottom:7px}.metric strong{color:var(--ink);font-size:21px}
+.modules{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-bottom:22px}
+.module{display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 15px;color:var(--navy)!important;font-weight:700}
+.module b{background:var(--soft);border-radius:99px;padding:3px 8px;color:var(--green)}
+.panel{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:22px}.panel h2{background:var(--soft);color:var(--navy);padding:14px 16px;margin:0;font-size:17px}
+.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse}th{background:#f8fafb;color:#60727e;font-size:12px;text-align:left;padding:11px 14px;white-space:nowrap}td{padding:12px 14px;border-top:1px solid #edf1f3;color:var(--ink);white-space:nowrap}
+.badge{display:inline-block;border-radius:99px;padding:4px 9px;font-size:11px;font-weight:700}.yes{background:#e6f5ee;color:#087344}.no{background:#f4f4f4;color:#68747c}.warning{background:#fff1d6;color:#8a5b00}.danger{background:#fde9e9;color:var(--danger)}.muted{color:#788993;font-size:12px}
+.actions{margin-top:14px}.actions a{display:inline-block;background:var(--gold);color:#172f3f!important;padding:9px 13px;border-radius:9px;font-weight:700;margin:4px 8px 0 0}
+@media(max-width:1050px){.metrics,.modules{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){#content{padding:14px}.metrics,.modules{grid-template-columns:1fr}}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="hero">
   <h1>Super administration Elev'Age</h1>
-  <p>Vue globale des comptes et exploitations enregistrés sur la base en ligne.</p>
+  <p>Vue complète des exploitations, clients, ventes, paiements, lettrages et opérations enregistrés en ligne.</p>
   <div class="actions">
-    <a href="{% url 'admin:core_user_changelist' %}">Gérer les utilisateurs</a>
-    <a href="{% url 'admin:core_exploitation_changelist' %}">Gérer les exploitations</a>
+    <a href="{% url 'admin:index' %}">Administration complète</a>
+    <a href="{% url 'admin:core_client_changelist' %}">Clients</a>
+    <a href="{% url 'admin:core_payment_changelist' %}">Paiements</a>
+    <a href="{% url 'admin:core_lettrage_changelist' %}">Lettrages</a>
   </div>
 </div>
 
 <section class="metrics">
-  <div class="metric"><span>Utilisateurs inscrits</span><strong>{{ total_users }}</strong></div>
+  <div class="metric"><span>Utilisateurs</span><strong>{{ total_users }}</strong></div>
   <div class="metric"><span>Exploitations</span><strong>{{ total_exploitations }}</strong></div>
-  <div class="metric"><span>Lots créés</span><strong>{{ total_lots }}</strong></div>
+  <div class="metric"><span>Clients</span><strong>{{ total_clients }}</strong></div>
+  <div class="metric"><span>Lots</span><strong>{{ total_lots }}</strong></div>
   <div class="metric"><span>Chiffre d'affaires global</span><strong>{{ total_sales|floatformat:0 }} FCFA</strong></div>
-  <div class="metric"><span>Paiements enregistrés</span><strong>{{ total_payments|floatformat:0 }} FCFA</strong></div>
+  <div class="metric"><span>Paiements reçus</span><strong>{{ total_payments|floatformat:0 }} FCFA</strong></div>
+  <div class="metric"><span>Solde clients</span><strong>{{ total_balance|floatformat:0 }} FCFA</strong></div>
+  <div class="metric"><span>Dépenses</span><strong>{{ total_expenses|floatformat:0 }} FCFA</strong></div>
 </section>
 
-<section class="panel">
-  <h2>Derniers utilisateurs inscrits</h2>
-  <div class="table-wrap"><table>
-    <thead><tr><th>Utilisateur</th><th>E-mail</th><th>Exploitation</th><th>Inscription</th><th>Dernière connexion</th><th>Compte</th></tr></thead>
-    <tbody>
-    {% for account in users %}
-      <tr>
-        <td><strong>{{ account.username }}</strong>{% if account.is_superuser %}<br><span class="muted">Superutilisateur</span>{% endif %}</td>
-        <td>{{ account.email|default:"-" }}</td>
-        <td>{{ account.exploitation.nom|default:"-" }}</td>
-        <td>{{ account.date_joined|date:"d/m/Y H:i" }}</td>
-        <td>{% if account.last_login %}{{ account.last_login|date:"d/m/Y H:i" }}{% else %}<span class="muted">Jamais</span>{% endif %}</td>
-        <td><span class="badge {% if account.is_active %}yes{% else %}no{% endif %}">{% if account.is_active %}Actif{% else %}Désactivé{% endif %}</span></td>
-      </tr>
-    {% empty %}<tr><td colspan="6">Aucun utilisateur.</td></tr>{% endfor %}
-    </tbody>
-  </table></div>
+<section class="modules">
+{% for label, count, route in modules %}
+  <a class="module" href="{% url route %}"><span>{{ label }}</span><b>{{ count }}</b></a>
+{% endfor %}
 </section>
 
-<section class="panel">
-  <h2>Exploitations</h2>
-  <div class="table-wrap"><table>
-    <thead><tr><th>Nom</th><th>Propriétaire</th><th>Utilisateurs</th><th>Lots</th><th>Création</th></tr></thead>
-    <tbody>
-    {% for farm in exploitations %}
-      <tr><td><strong>{{ farm.nom }}</strong></td><td>{{ farm.proprietaire.username }}</td><td>{{ farm.users_count }}</td><td>{{ farm.lots_count }}</td><td>{{ farm.date_creation|date:"d/m/Y" }}</td></tr>
-    {% empty %}<tr><td colspan="5">Aucune exploitation.</td></tr>{% endfor %}
-    </tbody>
-  </table></div>
-</section>
+<section class="panel"><h2>Situation par exploitation</h2><div class="table-wrap"><table>
+<thead><tr><th>Exploitation</th><th>Propriétaire</th><th>Utilisateurs</th><th>Lots</th><th>Clients</th><th>CA</th><th>Payé</th><th>Solde clients</th><th>Dépenses</th></tr></thead>
+<tbody>{% for farm in exploitations %}<tr>
+<td><strong>{{ farm.nom }}</strong></td><td>{{ farm.proprietaire.username }}</td><td>{{ farm.users_count }}</td><td>{{ farm.lots_count }}</td><td>{{ farm.clients_count }}</td>
+<td>{{ farm.sales_total|floatformat:0 }}</td><td>{{ farm.payments_total|floatformat:0 }}</td><td>{{ farm.balance_total|floatformat:0 }}</td><td>{{ farm.expenses_total|floatformat:0 }}</td>
+</tr>{% empty %}<tr><td colspan="9">Aucune exploitation.</td></tr>{% endfor %}</tbody>
+</table></div></section>
+
+<section class="panel"><h2>Dernières ventes</h2><div class="table-wrap"><table>
+<thead><tr><th>Date</th><th>Exploitation</th><th>Client</th><th>Lot</th><th>Facturé</th><th>Payé</th><th>Reste</th><th>Statut</th></tr></thead>
+<tbody>{% for sale in recent_sales %}<tr><td>{{ sale.date|date:"d/m/Y" }}</td><td>{{ sale.lot.exploitation.nom }}</td><td>{{ sale.client|default:"-" }}</td><td>{{ sale.lot.nom }}</td><td>{{ sale.montant_total|floatformat:0 }}</td><td>{{ sale.montant_paye|floatformat:0 }}</td><td>{{ sale.reste_a_payer|floatformat:0 }}</td><td><span class="badge {% if sale.statut == 'PAYE' %}yes{% elif sale.statut == 'PARTIEL' %}warning{% else %}danger{% endif %}">{{ sale.statut }}</span></td></tr>{% empty %}<tr><td colspan="8">Aucune vente.</td></tr>{% endfor %}</tbody>
+</table></div></section>
+
+<section class="panel"><h2>Derniers paiements</h2><div class="table-wrap"><table>
+<thead><tr><th>Date</th><th>Exploitation</th><th>Client</th><th>Montant</th><th>Note</th></tr></thead>
+<tbody>{% for payment in recent_payments %}<tr><td>{{ payment.date|date:"d/m/Y" }}</td><td>{{ payment.exploitation.nom }}</td><td>{{ payment.client.nom }}</td><td>{{ payment.montant|floatformat:0 }} FCFA</td><td>{{ payment.note|default:"-" }}</td></tr>{% empty %}<tr><td colspan="5">Aucun paiement.</td></tr>{% endfor %}</tbody>
+</table></div></section>
+
+<section class="panel"><h2>Derniers lettrages</h2><div class="table-wrap"><table>
+<thead><tr><th>Date</th><th>Client</th><th>Vente</th><th>Paiement</th><th>Montant affecté</th></tr></thead>
+<tbody>{% for allocation in recent_allocations %}<tr><td>{{ allocation.created_at|date:"d/m/Y H:i" }}</td><td>{{ allocation.vente.client|default:allocation.payment.client }}</td><td>#{{ allocation.vente_id }} — {{ allocation.vente.lot.nom }}</td><td>#{{ allocation.payment_id }}</td><td>{{ allocation.montant|floatformat:0 }} FCFA</td></tr>{% empty %}<tr><td colspan="5">Aucun lettrage.</td></tr>{% endfor %}</tbody>
+</table></div></section>
+
+<section class="panel"><h2>Derniers utilisateurs inscrits</h2><div class="table-wrap"><table>
+<thead><tr><th>Utilisateur</th><th>E-mail</th><th>Exploitation</th><th>Inscription</th><th>Dernière connexion</th><th>Compte</th></tr></thead>
+<tbody>{% for account in users %}<tr><td><strong>{{ account.username }}</strong>{% if account.is_superuser %}<br><span class="muted">Superutilisateur</span>{% endif %}</td><td>{{ account.email|default:"-" }}</td><td>{{ account.exploitation.nom|default:"-" }}</td><td>{{ account.date_joined|date:"d/m/Y H:i" }}</td><td>{% if account.last_login %}{{ account.last_login|date:"d/m/Y H:i" }}{% else %}<span class="muted">Jamais</span>{% endif %}</td><td><span class="badge {% if account.is_active %}yes{% else %}no{% endif %}">{% if account.is_active %}Actif{% else %}Désactivé{% endif %}</span></td></tr>{% empty %}<tr><td colspan="6">Aucun utilisateur.</td></tr>{% endfor %}</tbody>
+</table></div></section>
 {% endblock %}
