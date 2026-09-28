@@ -557,6 +557,8 @@ class ConsommationAliment(models.Model):
         related_name="consommations_aliment",
     )
     date = models.DateField(default=now)
+    distribution_at = models.DateTimeField(default=now, null=True, blank=True)
+    aliment = models.CharField(max_length=120, default="Aliment")
     quantite_kg = models.DecimalField(max_digits=10, decimal_places=3)
     prix_kg = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     depense = models.OneToOneField(
@@ -578,7 +580,7 @@ class ConsommationAliment(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ("-date", "-id")
+        ordering = ("-date", "-distribution_at", "-id")
 
     @property
     def cout_calcule(self):
@@ -592,6 +594,8 @@ class ConsommationAliment(models.Model):
         super().clean()
         if self.quantite_kg is not None and self.quantite_kg <= 0:
             raise ValidationError({"quantite_kg": "La quantité doit être supérieure à zéro."})
+        if not self.aliment or not self.aliment.strip():
+            raise ValidationError({"aliment": "Indiquez le nom de l'aliment."})
         if self.lot_id and self.exploitation_id:
             if self.lot.exploitation_id != self.exploitation_id:
                 raise ValidationError({"lot": "Ce lot appartient à une autre exploitation."})

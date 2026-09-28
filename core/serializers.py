@@ -1,5 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import datetime, time
 from .models import (
     CategorieDepense,
     Task,
@@ -501,6 +503,8 @@ class ConsommationAlimentSerializer(serializers.ModelSerializer):
             "lot",
             "lot_nom",
             "date",
+            "distribution_at",
+            "aliment",
             "quantite_kg",
             "prix_kg",
             "depense",
@@ -516,9 +520,13 @@ class ConsommationAlimentSerializer(serializers.ModelSerializer):
         request = self.context["request"]
         if lot.exploitation_id != request.user.exploitation_id:
             raise serializers.ValidationError("Ce lot appartient à une autre exploitation.")
-        if lot.type_production != "OEUFS":
-            raise serializers.ValidationError("L'alimentation de ponte exige un lot de ponte.")
         return lot
+
+    def validate_aliment(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Indiquez le nom de l'aliment.")
+        return value
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -527,6 +535,20 @@ class ConsommationAlimentSerializer(serializers.ModelSerializer):
         depense = attrs.get("depense", getattr(instance, "depense", None))
         quantite = attrs.get("quantite_kg", getattr(instance, "quantite_kg", None))
         prix_kg = attrs.get("prix_kg", getattr(instance, "prix_kg", None))
+
+        # Le champ date reste disponible pour les anciens clients et les statistiques
+        # avicoles. Les nouvelles saisies ont une date et une heure réelles.
+        if "distribution_at" in attrs and attrs["distribution_at"] is None:
+            raise serializers.ValidationError({"distribution_at": "Indiquez la date et l'heure."})
+        if "distribution_at" in attrs:
+            attrs["date"] = timezone.localtime(attrs["distribution_at"]).date()
+        elif "date" in attrs and (instance is None or attrs["date"] != instance.date):
+            attrs["distribution_at"] = timezone.make_aware(
+                datetime.combine(attrs["date"], time(12, 0))
+            )
+        elif instance is None:
+            attrs["distribution_at"] = timezone.now()
+            attrs["date"] = timezone.localdate(attrs["distribution_at"])
 
         if quantite is None or quantite <= 0:
             raise serializers.ValidationError({"quantite_kg": "La quantité doit être positive."})

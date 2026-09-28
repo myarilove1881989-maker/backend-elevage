@@ -1679,9 +1679,11 @@ def api_consommations_aliment(request):
     date_debut = parse_date(date_debut_raw) if date_debut_raw else None
     date_fin = parse_date(date_fin_raw) if date_fin_raw else None
     if lot_id:
-        lot = _get_laying_lot(request, lot_id)
+        lot = Lot.objects.filter(
+            pk=lot_id, exploitation=request.user.exploitation
+        ).first()
         if lot is None:
-            return Response({"error": "Lot de ponte introuvable"}, status=404)
+            return Response({"error": "Lot introuvable"}, status=404)
         consommations = consommations.filter(lot=lot)
     if date_debut_raw and date_debut is None:
         return Response({"error": "Date de début invalide"}, status=400)

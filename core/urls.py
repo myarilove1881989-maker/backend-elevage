@@ -88,4 +88,7 @@ urlpatterns = [
     path("oeufs/ventes/<int:pk>/", views.api_vente_oeufs_detail),
     path("oeufs/alimentation/", views.api_consommations_aliment),
     path("oeufs/alimentation/<int:pk>/", views.api_consommation_aliment_detail),
+    # Accès générique par lot ; les anciennes URL œufs restent compatibles.
+    path("alimentation/distributions/", views.api_consommations_aliment),
+    path("alimentation/distributions/<int:pk>/", views.api_consommation_aliment_detail),
 ]
