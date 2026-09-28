@@ -85,6 +85,7 @@ urlpatterns = [
     path("oeufs/collectes/<int:pk>/", views.api_collecte_oeufs_detail),
     path("oeufs/statistiques/", views.api_statistiques_oeufs),
     path("oeufs/stock-date/", views.api_stock_date_oeufs),
+    path("oeufs/kpi/", views.api_kpi_oeufs),
     path("oeufs/ventes/", views.api_ventes_oeufs),
     path("oeufs/ventes/<int:pk>/", views.api_vente_oeufs_detail),
     path("oeufs/alimentation/", views.api_consommations_aliment),

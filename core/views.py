@@ -61,6 +61,7 @@ from .egg_services import (
     save_collection,
     update_collection,
 )
+from .egg_kpis import get_laying_kpis
 
 # ===============================
 # 🔐 PERMISSION CUSTOM
@@ -1546,6 +1547,28 @@ def api_stock_date_oeufs(request):
     if lot is None:
         return Response({"error": "Lot de ponte introuvable"}, status=404)
     return Response(get_dated_egg_stock(request.user.exploitation, lot))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, HasExploitation])
+def api_kpi_oeufs(request):
+    lot_id = request.GET.get("lot")
+    if not lot_id:
+        return Response({"error": "Lot requis"}, status=400)
+    lot = _get_laying_lot(request, lot_id)
+    if lot is None:
+        return Response({"error": "Lot de ponte introuvable"}, status=404)
+
+    start_raw = request.GET.get("date_debut")
+    end_raw = request.GET.get("date_fin")
+    if bool(start_raw) != bool(end_raw):
+        return Response({"error": "Indiquez les deux dates de la période"}, status=400)
+    today = timezone.localdate()
+    start = parse_date(start_raw) if start_raw else today - timedelta(days=6)
+    end = parse_date(end_raw) if end_raw else today
+    if start is None or end is None or start > end or (end - start).days > 365:
+        return Response({"error": "Période invalide (366 jours maximum)"}, status=400)
+    return Response(get_laying_kpis(request.user.exploitation, lot, start=start, end=end))
 
 
 @api_view(["GET"])
