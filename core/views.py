@@ -27,10 +27,12 @@ from django.db.models.functions import Coalesce
 # Django utils
 from django.utils.timezone import now
 from datetime import timedelta
+from django.utils.dateparse import parse_date
 
 from .models import (
     Lot, Mouvement, Depense, Vente, Achat, Espece,
-    CategorieDepense, Client, Task, Payment, Lettrage, PasswordResetCode
+    CategorieDepense, Client, Task, Payment, Lettrage, PasswordResetCode,
+    CollecteOeufs, VenteOeufs, ConsommationAliment
 )
 
 from .serializers import (
@@ -41,7 +43,20 @@ from .serializers import (
     AchatSerializer,
     LotDetailSerializer,
     ClientSerializer,
-    TaskSerializer
+    TaskSerializer,
+    CollecteOeufsSerializer,
+    VenteOeufsSerializer,
+    ConsommationAlimentSerializer,
+)
+from .egg_services import (
+    create_egg_sale,
+    delete_collection,
+    delete_egg_sale,
+    get_egg_stock,
+    get_live_birds,
+    get_hen_days,
+    save_collection,
+    update_collection,
 )
 
 # ===============================
@@ -1423,3 +1438,353 @@ def api_performance_especes(request):
         'classement': ranking,
         'ventes_mensuelles': monthly_sales,
     })
+
+
+# ===============================
+# PRODUCTION D'ŒUFS
+# ===============================
+def _get_laying_lot(request, lot_id):
+    try:
+        return Lot.objects.get(
+            id=lot_id,
+            exploitation=request.user.exploitation,
+            type_production="OEUFS",
+        )
+    except Lot.DoesNotExist:
+        return None
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated, HasExploitation])
+def api_collectes_oeufs(request):
+    if request.method == "POST":
+        serializer = CollecteOeufsSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        collection = save_collection(serializer=serializer, user=request.user)
+        return Response(
+            CollecteOeufsSerializer(collection, context={"request": request}).data,
+            status=201,
+        )
+
+    collectes = CollecteOeufs.objects.filter(
+        exploitation=request.user.exploitation,
+    ).select_related("lot")
+    lot_id = request.GET.get("lot")
+    if lot_id:
+        lot = _get_laying_lot(request, lot_id)
+        if lot is None:
+            return Response({"error": "Lot de ponte introuvable"}, status=404)
+        collectes = collectes.filter(lot=lot)
+
+    date_debut_raw = request.GET.get("date_debut")
+    date_fin_raw = request.GET.get("date_fin")
+    date_debut = parse_date(date_debut_raw) if date_debut_raw else None
+    date_fin = parse_date(date_fin_raw) if date_fin_raw else None
+    if date_debut_raw and date_debut is None:
+        return Response({"error": "Date de début invalide"}, status=400)
+    if date_fin_raw and date_fin is None:
+        return Response({"error": "Date de fin invalide"}, status=400)
+    if date_debut:
+        collectes = collectes.filter(collecte_at__date__gte=date_debut)
+    if date_fin:
+        collectes = collectes.filter(collecte_at__date__lte=date_fin)
+
+    return Response(CollecteOeufsSerializer(
+        collectes,
+        many=True,
+        context={"request": request},
+    ).data)
+
+
+@api_view(["GET", "PATCH", "PUT", "DELETE"])
+@permission_classes([IsAuthenticated, HasExploitation])
+def api_collecte_oeufs_detail(request, pk):
+    try:
+        collection = CollecteOeufs.objects.select_related("lot").get(
+            id=pk,
+            exploitation=request.user.exploitation,
+        )
+    except CollecteOeufs.DoesNotExist:
+        return Response({"error": "Collecte introuvable"}, status=404)
+
+    if request.method == "GET":
+        return Response(CollecteOeufsSerializer(
+            collection,
+            context={"request": request},
+        ).data)
+    if request.method == "DELETE":
+        delete_collection(collection)
+        return Response(status=204)
+
+    serializer = CollecteOeufsSerializer(
+        collection,
+        data=request.data,
+        partial=request.method == "PATCH",
+        context={"request": request},
+    )
+    serializer.is_valid(raise_exception=True)
+    collection = update_collection(serializer=serializer)
+    return Response(CollecteOeufsSerializer(
+        collection,
+        context={"request": request},
+    ).data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, HasExploitation])
+def api_statistiques_oeufs(request):
+    lot_id = request.GET.get("lot")
+    if not lot_id:
+        return Response({"error": "Lot requis"}, status=400)
+    lot = _get_laying_lot(request, lot_id)
+    if lot is None:
+        return Response({"error": "Lot de ponte introuvable"}, status=404)
+
+    date_debut_raw = request.GET.get("date_debut")
+    date_fin_raw = request.GET.get("date_fin")
+    date_debut = parse_date(date_debut_raw) if date_debut_raw else now().date()
+    date_fin = parse_date(date_fin_raw) if date_fin_raw else now().date()
+    if date_debut is None or date_fin is None:
+        return Response({"error": "Période invalide"}, status=400)
+    if date_debut > date_fin:
+        return Response({"error": "La date de début doit précéder la date de fin"}, status=400)
+
+    collectes = CollecteOeufs.objects.filter(
+        exploitation=request.user.exploitation,
+        lot=lot,
+        collecte_at__date__range=(date_debut, date_fin),
+    )
+    totaux = collectes.aggregate(
+        collectes=Coalesce(Sum("nombre_collecte"), 0),
+        casses=Coalesce(Sum("nombre_casses"), 0),
+        declasses=Coalesce(Sum("nombre_declasses"), 0),
+        consommes_donnes=Coalesce(Sum("nombre_consommes_donnes"), 0),
+    )
+    nombre_collecte = totaux["collectes"]
+    commercialisables = nombre_collecte - (
+        totaux["casses"] + totaux["declasses"] + totaux["consommes_donnes"]
+    )
+    poules_vivantes = get_live_birds(lot)
+    poules_jours = get_hen_days(lot, date_debut, date_fin)
+    taux_ponte = round((nombre_collecte / poules_jours) * 100, 2) if poules_jours else 0
+    taux_casse = round((totaux["casses"] / nombre_collecte) * 100, 2) if nombre_collecte else 0
+    stock_oeufs = get_egg_stock(request.user.exploitation, lot)
+
+    ventes_oeufs = VenteOeufs.objects.filter(
+        exploitation=request.user.exploitation,
+        lot=lot,
+        vente__date__range=(date_debut, date_fin),
+    )
+    totaux_ventes = ventes_oeufs.aggregate(
+        oeufs_vendus=Coalesce(Sum("nombre_oeufs"), 0),
+        chiffre_affaires=Coalesce(
+            Sum("montant_total"),
+            Value(0),
+            output_field=DecimalField(max_digits=14, decimal_places=2),
+        ),
+    )
+    consommations = ConsommationAliment.objects.filter(
+        exploitation=request.user.exploitation,
+        lot=lot,
+        date__range=(date_debut, date_fin),
+    ).select_related("depense")
+    consommation_kg = consommations.aggregate(
+        total=Coalesce(
+            Sum("quantite_kg"),
+            Value(0),
+            output_field=DecimalField(max_digits=14, decimal_places=3),
+        )
+    )["total"]
+    cout_alimentation = sum(
+        (item.cout_calcule or 0) for item in consommations
+    )
+    cout_alimentation_non_comptabilise = sum(
+        (item.cout_calcule or 0) for item in consommations if item.depense_id is None
+    )
+    depenses_comptabilisees = Depense.objects.filter(
+        lot=lot,
+        date__range=(date_debut, date_fin),
+    ).aggregate(
+        total=Coalesce(
+            Sum("montant"),
+            Value(0),
+            output_field=DecimalField(max_digits=14, decimal_places=2),
+        )
+    )["total"]
+    cout_total = depenses_comptabilisees + cout_alimentation_non_comptabilise
+    chiffre_affaires_oeufs = totaux_ventes["chiffre_affaires"]
+    marge_oeufs = chiffre_affaires_oeufs - cout_total
+    cout_par_oeuf = round(float(cout_total) / nombre_collecte, 2) if nombre_collecte else 0
+    consommation_par_poule = (
+        round(float(consommation_kg) / poules_vivantes, 3) if poules_vivantes else 0
+    )
+
+    return Response({
+        "lot": lot.id,
+        "lot_nom": lot.nom,
+        "date_debut": date_debut,
+        "date_fin": date_fin,
+        "nombre_poules_vivantes": poules_vivantes,
+        "oeufs_collectes": nombre_collecte,
+        "oeufs_commercialisables": commercialisables,
+        "oeufs_casses": totaux["casses"],
+        "oeufs_declasses": totaux["declasses"],
+        "oeufs_consommes_donnes": totaux["consommes_donnes"],
+        "taux_ponte": taux_ponte,
+        "taux_casse": taux_casse,
+        "stock_oeufs": stock_oeufs,
+        "equivalent_plateaux": round(stock_oeufs / 30, 2),
+        "oeufs_vendus": totaux_ventes["oeufs_vendus"],
+        "chiffre_affaires_oeufs": chiffre_affaires_oeufs,
+        "consommation_aliment_kg": consommation_kg,
+        "consommation_moyenne_par_poule_kg": consommation_par_poule,
+        "cout_alimentation": cout_alimentation,
+        "depenses_comptabilisees": depenses_comptabilisees,
+        "couts_non_comptabilises": cout_alimentation_non_comptabilise,
+        "cout_par_oeuf": cout_par_oeuf,
+        "marge_oeufs": marge_oeufs,
+    })
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated, HasExploitation])
+def api_consommations_aliment(request):
+    if request.method == "POST":
+        serializer = ConsommationAlimentSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        consommation = serializer.save(
+            exploitation=request.user.exploitation,
+            created_by=request.user,
+        )
+        return Response(
+            ConsommationAlimentSerializer(
+                consommation,
+                context={"request": request},
+            ).data,
+            status=201,
+        )
+
+    consommations = ConsommationAliment.objects.filter(
+        exploitation=request.user.exploitation,
+    ).select_related("lot", "depense", "depense__categorie")
+    lot_id = request.GET.get("lot")
+    date_debut_raw = request.GET.get("date_debut")
+    date_fin_raw = request.GET.get("date_fin")
+    date_debut = parse_date(date_debut_raw) if date_debut_raw else None
+    date_fin = parse_date(date_fin_raw) if date_fin_raw else None
+    if lot_id:
+        lot = _get_laying_lot(request, lot_id)
+        if lot is None:
+            return Response({"error": "Lot de ponte introuvable"}, status=404)
+        consommations = consommations.filter(lot=lot)
+    if date_debut_raw and date_debut is None:
+        return Response({"error": "Date de début invalide"}, status=400)
+    if date_fin_raw and date_fin is None:
+        return Response({"error": "Date de fin invalide"}, status=400)
+    if date_debut:
+        consommations = consommations.filter(date__gte=date_debut)
+    if date_fin:
+        consommations = consommations.filter(date__lte=date_fin)
+    return Response(ConsommationAlimentSerializer(
+        consommations,
+        many=True,
+        context={"request": request},
+    ).data)
+
+
+@api_view(["GET", "PATCH", "PUT", "DELETE"])
+@permission_classes([IsAuthenticated, HasExploitation])
+def api_consommation_aliment_detail(request, pk):
+    try:
+        consommation = ConsommationAliment.objects.select_related(
+            "lot", "depense", "depense__categorie"
+        ).get(id=pk, exploitation=request.user.exploitation)
+    except ConsommationAliment.DoesNotExist:
+        return Response({"error": "Consommation introuvable"}, status=404)
+
+    if request.method == "GET":
+        return Response(ConsommationAlimentSerializer(
+            consommation,
+            context={"request": request},
+        ).data)
+    if request.method == "DELETE":
+        consommation.delete()
+        return Response(status=204)
+
+    serializer = ConsommationAlimentSerializer(
+        consommation,
+        data=request.data,
+        partial=request.method == "PATCH",
+        context={"request": request},
+    )
+    serializer.is_valid(raise_exception=True)
+    consommation = serializer.save()
+    return Response(ConsommationAlimentSerializer(
+        consommation,
+        context={"request": request},
+    ).data)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated, HasExploitation])
+def api_ventes_oeufs(request):
+    if request.method == "POST":
+        serializer = VenteOeufsSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        try:
+            vente_oeufs = create_egg_sale(
+                validated_data=dict(serializer.validated_data),
+                user=request.user,
+            )
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=400)
+        return Response(
+            VenteOeufsSerializer(vente_oeufs, context={"request": request}).data,
+            status=201,
+        )
+
+    ventes = VenteOeufs.objects.filter(
+        exploitation=request.user.exploitation,
+    ).select_related("vente", "vente__client", "lot")
+    lot_id = request.GET.get("lot")
+    client_id = request.GET.get("client")
+    if lot_id:
+        ventes = ventes.filter(lot_id=lot_id)
+    if client_id:
+        ventes = ventes.filter(vente__client_id=client_id)
+    return Response(VenteOeufsSerializer(
+        ventes.order_by("-vente__date", "-id"),
+        many=True,
+        context={"request": request},
+    ).data)
+
+
+@api_view(["GET", "DELETE"])
+@permission_classes([IsAuthenticated, HasExploitation])
+def api_vente_oeufs_detail(request, pk):
+    try:
+        vente_oeufs = VenteOeufs.objects.select_related(
+            "vente", "vente__client", "lot"
+        ).get(id=pk, exploitation=request.user.exploitation)
+    except VenteOeufs.DoesNotExist:
+        return Response({"error": "Vente d'œufs introuvable"}, status=404)
+
+    if request.method == "GET":
+        return Response(VenteOeufsSerializer(
+            vente_oeufs,
+            context={"request": request},
+        ).data)
+    try:
+        delete_egg_sale(vente_oeufs)
+    except ValueError as exc:
+        return Response({"error": str(exc)}, status=400)
+    return Response(status=204)

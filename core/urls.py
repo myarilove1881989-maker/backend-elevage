@@ -79,4 +79,13 @@ urlpatterns = [
     # PERFORMANCE LOTS
     path("performance-lots/", views.api_performance_lots),
     path("performance-especes/", views.api_performance_especes),
+
+    # PRODUCTION D'ŒUFS
+    path("oeufs/collectes/", views.api_collectes_oeufs),
+    path("oeufs/collectes/<int:pk>/", views.api_collecte_oeufs_detail),
+    path("oeufs/statistiques/", views.api_statistiques_oeufs),
+    path("oeufs/ventes/", views.api_ventes_oeufs),
+    path("oeufs/ventes/<int:pk>/", views.api_vente_oeufs_detail),
+    path("oeufs/alimentation/", views.api_consommations_aliment),
+    path("oeufs/alimentation/<int:pk>/", views.api_consommation_aliment_detail),
 ]

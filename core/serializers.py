@@ -11,6 +11,9 @@ from .models import (
     Depense,
     Vente,
     Exploitation,
+    CollecteOeufs,
+    VenteOeufs,
+    ConsommationAliment,
 )
 from .species_catalog import ensure_species_catalog
 
@@ -154,6 +157,11 @@ class LotDetailSerializer(serializers.ModelSerializer):
             "date_debut",
             "date_fin",
             "date_creation",
+            "type_production",
+            "statut_production",
+            "date_naissance",
+            "age_arrivee_semaines",
+            "date_debut_ponte",
             "stock",
             "mouvements",
             "depenses",
@@ -197,6 +205,26 @@ class AchatSerializer(serializers.ModelSerializer):
 
     fournisseur = serializers.CharField(required=False, allow_blank=True)
     note = serializers.CharField(required=False, allow_blank=True)
+    type_production = serializers.ChoiceField(
+        choices=Lot.TYPE_PRODUCTION_CHOICES,
+        write_only=True,
+        required=False,
+        default="CHAIR",
+    )
+    statut_production = serializers.ChoiceField(
+        choices=Lot.STATUT_PRODUCTION_CHOICES,
+        write_only=True,
+        required=False,
+        default="ELEVAGE",
+    )
+    date_naissance = serializers.DateField(write_only=True, required=False, allow_null=True)
+    age_arrivee_semaines = serializers.IntegerField(
+        write_only=True,
+        required=False,
+        allow_null=True,
+        min_value=0,
+    )
+    date_debut_ponte = serializers.DateField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = Achat
@@ -210,6 +238,11 @@ class AchatSerializer(serializers.ModelSerializer):
             "date",
             "fournisseur",
             "note",
+            "type_production",
+            "statut_production",
+            "date_naissance",
+            "age_arrivee_semaines",
+            "date_debut_ponte",
         )
 
     def create(self, validated_data):
@@ -224,6 +257,11 @@ class AchatSerializer(serializers.ModelSerializer):
 
         fournisseur = validated_data.pop("fournisseur", "")
         note = validated_data.pop("note", "")
+        type_production = validated_data.pop("type_production", "CHAIR")
+        statut_production = validated_data.pop("statut_production", "ELEVAGE")
+        date_naissance = validated_data.pop("date_naissance", None)
+        age_arrivee_semaines = validated_data.pop("age_arrivee_semaines", None)
+        date_debut_ponte = validated_data.pop("date_debut_ponte", None)
 
         try:
             espece = Espece.objects.get(id=espece_id)
@@ -245,7 +283,12 @@ class AchatSerializer(serializers.ModelSerializer):
             nom=nom_lot,
             espece=espece,
             exploitation=user.exploitation,
-            date_debut=date_achat
+            date_debut=date_achat,
+            type_production=type_production,
+            statut_production=statut_production,
+            date_naissance=date_naissance,
+            age_arrivee_semaines=age_arrivee_semaines,
+            date_debut_ponte=date_debut_ponte,
         )
 
         # ✅ Création achat
@@ -304,3 +347,196 @@ class MargeParLotSerializer(serializers.Serializer):
     total_depenses = serializers.FloatField()
     marge = serializers.FloatField()
     rentabilite = serializers.FloatField()
+
+
+# ===============================
+# PRODUCTION D'ŒUFS
+# ===============================
+class CollecteOeufsSerializer(serializers.ModelSerializer):
+    nombre_commercialisable = serializers.IntegerField(read_only=True)
+    lot_nom = serializers.CharField(source="lot.nom", read_only=True)
+
+    class Meta:
+        model = CollecteOeufs
+        fields = (
+            "id",
+            "lot",
+            "lot_nom",
+            "collecte_at",
+            "nombre_collecte",
+            "nombre_casses",
+            "nombre_declasses",
+            "nombre_consommes_donnes",
+            "nombre_commercialisable",
+            "note",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("created_at", "updated_at")
+
+    def validate_lot(self, lot):
+        request = self.context["request"]
+        if lot.exploitation_id != request.user.exploitation_id:
+            raise serializers.ValidationError("Ce lot appartient à une autre exploitation.")
+        if lot.type_production != "OEUFS":
+            raise serializers.ValidationError("Les collectes sont réservées aux lots de ponte.")
+        return lot
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        instance = self.instance
+
+        total = attrs.get("nombre_collecte", getattr(instance, "nombre_collecte", 0))
+        casses = attrs.get("nombre_casses", getattr(instance, "nombre_casses", 0))
+        declasses = attrs.get("nombre_declasses", getattr(instance, "nombre_declasses", 0))
+        consommes = attrs.get(
+            "nombre_consommes_donnes",
+            getattr(instance, "nombre_consommes_donnes", 0),
+        )
+
+        if casses + declasses + consommes > total:
+            raise serializers.ValidationError(
+                "Le total cassé, déclassé et consommé/donné ne peut pas dépasser la collecte."
+            )
+        return attrs
+
+
+class VenteOeufsSerializer(serializers.ModelSerializer):
+    client = serializers.IntegerField(write_only=True)
+    client_id = serializers.IntegerField(source="vente.client_id", read_only=True)
+    client_nom = serializers.CharField(source="vente.client.nom", read_only=True)
+    date = serializers.DateField(source="vente.date", required=False)
+    statut = serializers.CharField(source="vente.statut", read_only=True)
+    montant_paye = serializers.FloatField(source="vente.montant_paye", read_only=True)
+    reste = serializers.FloatField(source="vente.reste_a_payer", read_only=True)
+
+    class Meta:
+        model = VenteOeufs
+        fields = (
+            "id",
+            "vente",
+            "lot",
+            "client",
+            "client_id",
+            "client_nom",
+            "date",
+            "conditionnement",
+            "nombre_conditionnements",
+            "oeufs_par_conditionnement",
+            "nombre_oeufs",
+            "prix_unitaire_conditionnement",
+            "montant_total",
+            "montant_paye",
+            "reste",
+            "statut",
+            "created_at",
+        )
+        read_only_fields = (
+            "vente",
+            "nombre_oeufs",
+            "montant_total",
+            "created_at",
+        )
+
+    def validate_lot(self, lot):
+        request = self.context["request"]
+        if lot.exploitation_id != request.user.exploitation_id:
+            raise serializers.ValidationError("Ce lot appartient à une autre exploitation.")
+        if lot.type_production != "OEUFS":
+            raise serializers.ValidationError("Les ventes d'œufs exigent un lot de ponte.")
+        return lot
+
+    def validate_client(self, client_id):
+        request = self.context["request"]
+        if not Client.objects.filter(
+            id=client_id,
+            exploitation=request.user.exploitation,
+        ).exists():
+            raise serializers.ValidationError("Client introuvable pour cette exploitation.")
+        return client_id
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        conditionnement = attrs.get("conditionnement")
+        nombre = attrs.get("nombre_conditionnements", 0)
+        oeufs_par_conditionnement = attrs.get("oeufs_par_conditionnement")
+        prix = attrs.get("prix_unitaire_conditionnement")
+
+        tailles_fixes = {"UNITE": 1, "DOUZAINE": 12, "PLATEAU": 30}
+        if conditionnement in tailles_fixes:
+            attrs["oeufs_par_conditionnement"] = tailles_fixes[conditionnement]
+        elif conditionnement == "CARTON":
+            if not oeufs_par_conditionnement or oeufs_par_conditionnement <= 0:
+                raise serializers.ValidationError({
+                    "oeufs_par_conditionnement": "La contenance du carton est obligatoire."
+                })
+
+        if nombre <= 0:
+            raise serializers.ValidationError({
+                "nombre_conditionnements": "Le nombre de conditionnements doit être positif."
+            })
+        if prix is None or prix <= 0:
+            raise serializers.ValidationError({
+                "prix_unitaire_conditionnement": "Le prix doit être positif."
+            })
+        return attrs
+
+
+class ConsommationAlimentSerializer(serializers.ModelSerializer):
+    lot_nom = serializers.CharField(source="lot.nom", read_only=True)
+    categorie_depense = serializers.CharField(
+        source="depense.categorie.nom",
+        read_only=True,
+    )
+    cout_calcule = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        read_only=True,
+    )
+
+    class Meta:
+        model = ConsommationAliment
+        fields = (
+            "id",
+            "lot",
+            "lot_nom",
+            "date",
+            "quantite_kg",
+            "prix_kg",
+            "depense",
+            "categorie_depense",
+            "cout_calcule",
+            "note",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("created_at", "updated_at")
+
+    def validate_lot(self, lot):
+        request = self.context["request"]
+        if lot.exploitation_id != request.user.exploitation_id:
+            raise serializers.ValidationError("Ce lot appartient à une autre exploitation.")
+        if lot.type_production != "OEUFS":
+            raise serializers.ValidationError("L'alimentation de ponte exige un lot de ponte.")
+        return lot
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        instance = self.instance
+        lot = attrs.get("lot", getattr(instance, "lot", None))
+        depense = attrs.get("depense", getattr(instance, "depense", None))
+        quantite = attrs.get("quantite_kg", getattr(instance, "quantite_kg", None))
+        prix_kg = attrs.get("prix_kg", getattr(instance, "prix_kg", None))
+
+        if quantite is None or quantite <= 0:
+            raise serializers.ValidationError({"quantite_kg": "La quantité doit être positive."})
+        if prix_kg is not None and prix_kg < 0:
+            raise serializers.ValidationError({"prix_kg": "Le prix ne peut pas être négatif."})
+        if depense:
+            if depense.lot.exploitation_id != self.context["request"].user.exploitation_id:
+                raise serializers.ValidationError({"depense": "Dépense introuvable."})
+            if lot and depense.lot_id != lot.id:
+                raise serializers.ValidationError({
+                    "depense": "La dépense doit appartenir au même lot."
+                })
+        return attrs
