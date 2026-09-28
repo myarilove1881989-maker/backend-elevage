@@ -449,9 +449,22 @@ def api_lot_detail(request, pk):
     marge = total_ca - total_depenses
 
     serializer = LotDetailSerializer(lot)
+    ventes_oeufs = [
+        {
+            "id": item.pk,
+            "date": item.vente.date,
+            "nombre_oeufs": item.nombre_oeufs,
+            "montant_total": item.vente.montant_total,
+            "client_nom": item.vente.client.nom if item.vente.client else None,
+        }
+        for item in VenteOeufs.objects.filter(
+            lot=lot, exploitation=request.user.exploitation,
+        ).select_related("vente", "vente__client").order_by("-vente__date", "-id")
+    ]
 
     return Response({
         **serializer.data,
+        "ventes_oeufs": ventes_oeufs,
         "kpis": {
             "stock": stock,
             "stock_initial": stock,
@@ -467,6 +480,7 @@ def api_lot_detail(request, pk):
 # ===============================
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@transaction.atomic
 def api_create_mouvement(request):
 
     lot_id = request.data.get("lot")
@@ -475,7 +489,7 @@ def api_create_mouvement(request):
         return Response({"error": "Lot requis"}, status=400)
 
     try:
-        lot = Lot.objects.get(id=lot_id)
+        lot = Lot.objects.select_for_update().get(id=lot_id)
     except Lot.DoesNotExist:
         return Response({"error": "Lot introuvable"}, status=404)
 
@@ -486,11 +500,22 @@ def api_create_mouvement(request):
         quantite = int(request.data.get("quantite", 0))
     except (TypeError, ValueError):
         return Response({"error": "Quantité invalide"}, status=400)
+    if quantite <= 0:
+        return Response({"error": "La quantité doit être positive"}, status=400)
 
     type_mouvement = request.data.get("type_mouvement")
 
     if type_mouvement not in ["ACHAT", "VENTE", "MORTALITE", "DON", "VOL"]:
         return Response({"error": "Type invalide"}, status=400)
+
+    client = None
+    if type_mouvement == "VENTE":
+        try:
+            client = Client.objects.get(
+                id=request.data.get("client"), exploitation=request.user.exploitation,
+            )
+        except (Client.DoesNotExist, TypeError, ValueError):
+            return Response({"error": "Client invalide"}, status=400)
 
     stock = get_lot_stock(lot)
     if type_mouvement != "ACHAT" and quantite > stock:
@@ -501,32 +526,27 @@ def api_create_mouvement(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=400)
 
+    if type_mouvement == "VENTE":
+        prix = serializer.validated_data.get("prix_unitaire")
+        if prix is None or prix <= 0:
+            return Response({"error": "Prix unitaire invalide"}, status=400)
+
     mouvement = serializer.save(
         lot=lot,
         exploitation=request.user.exploitation,
         created_by=request.user
     )
 
-    # 🔥 GESTION VENTE
     if mouvement.type_mouvement == "VENTE":
-        try:
-            client = Client.objects.get(
-                id=request.data.get("client"),
-                exploitation=request.user.exploitation
-            )
-        except Client.DoesNotExist:
-            return Response({"error": "Client invalide"}, status=400)
-
-        prix_unitaire = float(request.data.get("prix_unitaire", 0))
-
-        Vente.objects.create(
+        vente = Vente.objects.create(
             lot=lot,
             client=client,
             quantite=mouvement.quantite,
-            prix_unitaire=prix_unitaire,
-            montant_total=prix_unitaire * mouvement.quantite,
-            date=mouvement.date
+            prix_unitaire=serializer.validated_data["prix_unitaire"],
+            date=mouvement.date,
         )
+        mouvement.vente = vente
+        mouvement.save(update_fields=["vente"])
 
     return Response(serializer.data, status=201)
 # ===============================
@@ -534,26 +554,34 @@ def api_create_mouvement(request):
 # ===============================
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@transaction.atomic
 def api_delete_mouvement(request, pk):
 
     try:
-        mouvement = Mouvement.objects.get(id=pk)
+        mouvement = Mouvement.objects.select_for_update().get(id=pk)
     except Mouvement.DoesNotExist:
         return Response({"error": "Introuvable"}, status=404)
 
     if mouvement.lot.exploitation != request.user.exploitation:
         return Response({"error": "Accès interdit"}, status=403)
 
-    lot = mouvement.lot
-
     if mouvement.type_mouvement == "VENTE":
-        Vente.objects.filter(
-            lot=lot,
-            quantite=mouvement.quantite,
-            date=mouvement.date
-        ).delete()
+        if not mouvement.vente_id:
+            return Response({
+                "error": "Ancienne vente sans lien certain : suppression à vérifier manuellement."
+            }, status=409)
+        client_id = Vente.objects.filter(pk=mouvement.vente_id).values_list("client_id", flat=True).first()
+        if client_id:
+            Client.objects.select_for_update().get(pk=client_id)
+        vente = Vente.objects.select_for_update().get(pk=mouvement.vente_id)
+        if vente.lettrages.exists():
+            return Response({"error": "Une vente payée ne peut pas être supprimée."}, status=400)
+        if VenteOeufs.objects.filter(vente=vente).exists():
+            return Response({"error": "Cette vente relève du circuit œufs."}, status=400)
 
     mouvement.delete()
+    if mouvement.type_mouvement == "VENTE":
+        vente.delete()
 
     return Response({"message": "Supprimé"}, status=200)
 
@@ -636,6 +664,7 @@ def api_client_balance(request, client_id):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@transaction.atomic
 def api_create_payment(request):
 
     client_id = request.data.get("client")
@@ -653,7 +682,7 @@ def api_create_payment(request):
     # ===============================
 
     try:
-        client = Client.objects.get(
+        client = Client.objects.select_for_update().get(
             id=client_id,
             exploitation=request.user.exploitation
         )
@@ -690,7 +719,7 @@ def api_create_payment(request):
     if vente_id:
 
         try:
-            vente = Vente.objects.get(
+            vente = Vente.objects.select_for_update().get(
                 id=vente_id,
                 client=client,
                 lot__exploitation=request.user.exploitation
@@ -805,13 +834,14 @@ def api_client_ventes(request, client_id):
         return Response({"error": "Client introuvable"}, status=404)
 
     ventes = Vente.objects.filter(
-    client=client,
-    lot__exploitation=request.user.exploitation
-    ).order_by("-date")
+        client=client,
+        lot__exploitation=request.user.exploitation,
+    ).select_related("lot", "lot__espece", "detail_oeufs").order_by("-date", "-id")
 
     data = []
 
     for v in ventes:
+        detail_oeufs = getattr(v, "detail_oeufs", None)
         total_lettre = v.lettrages.aggregate(
             total=Sum('montant')
         )['total'] or 0
@@ -835,6 +865,9 @@ def api_client_ventes(request, client_id):
             "montant_paye": float(total_lettre),
             "reste": reste,
             "statut": statut,
+            "produit_vendu": "OEUFS" if detail_oeufs else "ANIMAUX",
+            "nombre_oeufs": detail_oeufs.nombre_oeufs if detail_oeufs else None,
+            "conditionnement": detail_oeufs.conditionnement if detail_oeufs else None,
             # 🔥 AJOUT IMPORTANT
             "lot_nom": v.lot.nom,
             "espece": v.lot.espece.nom,
@@ -1196,6 +1229,13 @@ def api_delete_achat(request, pk):
 
     lot = achat.lot
 
+    # Une suppression d'achat ne doit pas effacer ventes, lettrages ou stock
+    # d'œufs par cascade. Le lot doit être traité explicitement à part.
+    if Vente.objects.filter(lot=lot).exists():
+        return Response({
+            "error": "Ce lot possède des ventes : suppression d'achat impossible."
+        }, status=409)
+
     # suppression complète du lot (cohérent avec ton système)
     Vente.objects.filter(lot=lot).delete()
     Mouvement.objects.filter(lot=lot).delete()
@@ -1391,7 +1431,7 @@ def api_performance_especes(request):
         purchased = Achat.objects.filter(lot__in=lots).aggregate(
             total=Sum('quantite'),
         )['total'] or 0
-        sold = Vente.objects.filter(lot__in=lots).aggregate(
+        sold = Vente.objects.filter(lot__in=lots, detail_oeufs__isnull=True).aggregate(
             total=Sum('quantite'),
         )['total'] or 0
         revenue = Vente.objects.filter(lot__in=lots).aggregate(
@@ -1402,7 +1442,7 @@ def api_performance_especes(request):
         )['total'] or 0
 
         monthly = list(
-            Vente.objects.filter(lot__in=lots)
+            Vente.objects.filter(lot__in=lots, detail_oeufs__isnull=True)
             .annotate(month=TruncMonth('date'))
             .values('month')
             .annotate(quantity=Sum('quantite'))

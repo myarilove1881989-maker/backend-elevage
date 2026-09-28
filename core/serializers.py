@@ -440,6 +440,17 @@ class AffectationOeufsInputSerializer(serializers.Serializer):
 
 class VenteOeufsSerializer(serializers.ModelSerializer):
     affectations = AffectationOeufsInputSerializer(many=True, write_only=True, required=False)
+    nombre_alveoles = serializers.IntegerField(min_value=0, write_only=True, required=False)
+    oeufs_supplementaires = serializers.IntegerField(
+        min_value=0, max_value=29, write_only=True, required=False,
+    )
+    prix_total = serializers.DecimalField(
+        max_digits=10, decimal_places=2, write_only=True, required=False,
+    )
+    nombre_conditionnements = serializers.IntegerField(min_value=1, required=False)
+    prix_unitaire_conditionnement = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False,
+    )
     client = serializers.IntegerField(write_only=True)
     client_id = serializers.IntegerField(source="vente.client_id", read_only=True)
     client_nom = serializers.CharField(source="vente.client.nom", read_only=True)
@@ -462,6 +473,9 @@ class VenteOeufsSerializer(serializers.ModelSerializer):
             "nombre_conditionnements",
             "oeufs_par_conditionnement",
             "nombre_oeufs",
+            "nombre_alveoles",
+            "oeufs_supplementaires",
+            "prix_total",
             "affectations",
             "prix_unitaire_conditionnement",
             "montant_total",
@@ -497,6 +511,36 @@ class VenteOeufsSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         conditionnement = attrs.get("conditionnement")
+
+        if conditionnement == "COMPOSE":
+            if any(field in attrs for field in (
+                "nombre_conditionnements", "oeufs_par_conditionnement",
+                "prix_unitaire_conditionnement",
+            )):
+                raise serializers.ValidationError(
+                    "Une vente en alvéoles utilise les quantités et le prix total saisis."
+                )
+            if not all(field in attrs for field in (
+                "nombre_alveoles", "oeufs_supplementaires", "prix_total",
+            )):
+                raise serializers.ValidationError(
+                    "Alvéoles, œufs supplémentaires et prix total sont requis."
+                )
+            nombre = attrs.pop("nombre_alveoles") * 30 + attrs.pop("oeufs_supplementaires")
+            prix_total = attrs.pop("prix_total")
+            if nombre <= 0 or prix_total <= 0:
+                raise serializers.ValidationError("La quantité et le prix total doivent être positifs.")
+            attrs["nombre_conditionnements"] = 1
+            attrs["oeufs_par_conditionnement"] = nombre
+            attrs["prix_unitaire_conditionnement"] = prix_total
+            return attrs
+
+        if any(field in attrs for field in (
+            "nombre_alveoles", "oeufs_supplementaires", "prix_total",
+        )):
+            raise serializers.ValidationError(
+                "Les alvéoles et le prix total exigent le conditionnement composé."
+            )
         nombre = attrs.get("nombre_conditionnements", 0)
         oeufs_par_conditionnement = attrs.get("oeufs_par_conditionnement")
         prix = attrs.get("prix_unitaire_conditionnement")

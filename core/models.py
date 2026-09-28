@@ -157,6 +157,12 @@ class Mouvement(models.Model):
 
     client = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, blank=True)
 
+    # Les anciennes ventes restent sans lien : leur rapprochement serait ambigu.
+    vente = models.OneToOneField(
+        'Vente', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='mouvement_animal',
+    )
+
     exploitation = models.ForeignKey("Exploitation", on_delete=models.CASCADE, null=True)
     created_by = models.ForeignKey("User", on_delete=models.SET_NULL, null=True)
 
@@ -538,6 +544,7 @@ class VenteOeufs(models.Model):
         ('DOUZAINE', 'Douzaine'),
         ('PLATEAU', 'Plateau'),
         ('CARTON', 'Carton'),
+        ('COMPOSE', 'Alvéoles et œufs supplémentaires'),
     ]
 
     vente = models.OneToOneField(

@@ -291,6 +291,10 @@ def create_egg_sale(*, validated_data, user):
 
 @transaction.atomic
 def delete_egg_sale(vente_oeufs):
-    if vente_oeufs.vente.lettrages.exists():
+    client_id = vente_oeufs.vente.client_id
+    if client_id:
+        Client.objects.select_for_update().get(pk=client_id)
+    vente = Vente.objects.select_for_update().get(pk=vente_oeufs.vente_id)
+    if vente.lettrages.exists():
         raise ValueError("Impossible de supprimer une vente ayant déjà reçu un paiement.")
-    vente_oeufs.vente.delete()
+    vente.delete()
