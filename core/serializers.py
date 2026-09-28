@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from datetime import datetime, time
+from decimal import Decimal
 from .models import (
     CategorieDepense,
     Task,
@@ -16,6 +17,7 @@ from .models import (
     CollecteOeufs,
     VenteOeufs,
     ConsommationAliment,
+    PeseeProduction,
 )
 from .species_catalog import ensure_species_catalog
 
@@ -562,3 +564,48 @@ class ConsommationAlimentSerializer(serializers.ModelSerializer):
                     "depense": "La dépense doit appartenir au même lot."
                 })
         return attrs
+
+
+class PeseeProductionSerializer(serializers.ModelSerializer):
+    lot_nom = serializers.CharField(source="lot.nom", read_only=True)
+    poids_moyen_kg = serializers.SerializerMethodField()
+    gmq_g_par_jour = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PeseeProduction
+        fields = (
+            "id", "lot", "lot_nom", "pesee_at", "nombre_animaux_peses",
+            "poids_total_kg", "poids_moyen_kg", "gmq_g_par_jour", "note",
+            "created_at",
+        )
+        read_only_fields = ("created_at",)
+        extra_kwargs = {
+            "nombre_animaux_peses": {"min_value": 1},
+            "poids_total_kg": {"min_value": Decimal("0.001")},
+        }
+
+    def validate_lot(self, lot):
+        request = self.context["request"]
+        if lot.exploitation_id != request.user.exploitation_id:
+            raise serializers.ValidationError("Ce lot appartient à une autre exploitation.")
+        if lot.type_production != "CHAIR":
+            raise serializers.ValidationError("Les pesées sont réservées aux lots CHAIR.")
+        return lot
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        nombre = attrs.get("nombre_animaux_peses")
+        stock_actuel = self.context.get("stock_actuel")
+        if nombre is not None and stock_actuel is not None and nombre > stock_actuel:
+            raise serializers.ValidationError({
+                "nombre_animaux_peses": (
+                    f"L'échantillon ne peut pas dépasser l'effectif actuel ({stock_actuel})."
+                )
+            })
+        return attrs
+
+    def get_poids_moyen_kg(self, obj):
+        return obj.poids_moyen_kg.quantize(Decimal("0.001"))
+
+    def get_gmq_g_par_jour(self, obj):
+        return self.context.get("gmq_by_id", {}).get(obj.pk)

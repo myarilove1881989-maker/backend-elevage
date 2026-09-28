@@ -607,6 +607,73 @@ class ConsommationAliment(models.Model):
         return f"{self.lot} - {self.quantite_kg} kg le {self.date}"
 
 
+class PeseeProduction(models.Model):
+    """Pondération d'un échantillon d'animaux d'un lot de production."""
+
+    exploitation = models.ForeignKey(
+        Exploitation,
+        on_delete=models.CASCADE,
+        related_name="pesees_production",
+    )
+    lot = models.ForeignKey(
+        Lot,
+        on_delete=models.CASCADE,
+        related_name="pesees_production",
+    )
+    pesee_at = models.DateTimeField(default=now)
+    nombre_animaux_peses = models.PositiveIntegerField()
+    poids_total_kg = models.DecimalField(max_digits=12, decimal_places=3)
+    note = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pesees_production_creees",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("pesee_at", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(nombre_animaux_peses__gt=0),
+                name="pesee_animaux_gt_zero",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(poids_total_kg__gt=0),
+                name="pesee_poids_gt_zero",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("lot", "pesee_at"),
+                name="core_pesee_lot_id_at_idx",
+            )
+        ]
+
+    @property
+    def poids_moyen_kg(self):
+        if not self.nombre_animaux_peses:
+            return None
+        return self.poids_total_kg / self.nombre_animaux_peses
+
+    def clean(self):
+        super().clean()
+        if self.nombre_animaux_peses is not None and self.nombre_animaux_peses <= 0:
+            raise ValidationError({"nombre_animaux_peses": "Le nombre d'animaux doit être supérieur à zéro."})
+        if self.poids_total_kg is not None and self.poids_total_kg <= 0:
+            raise ValidationError({"poids_total_kg": "Le poids total doit être supérieur à zéro."})
+        if self.lot_id and self.exploitation_id:
+            if self.lot.exploitation_id != self.exploitation_id:
+                raise ValidationError({"lot": "Ce lot appartient à une autre exploitation."})
+            if self.lot.type_production != "CHAIR":
+                raise ValidationError({"lot": "Les pesées de croissance sont réservées aux lots CHAIR."})
+
+    def __str__(self):
+        return f"Pesée de {self.lot} - {self.pesee_at:%Y-%m-%d %H:%M}"
+
+
 # ===============================
 # PASSWORD RESET
 # ===============================

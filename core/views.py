@@ -27,12 +27,13 @@ from django.db.models.functions import Coalesce
 # Django utils
 from django.utils.timezone import now
 from datetime import timedelta
+from decimal import Decimal
 from django.utils.dateparse import parse_date
 
 from .models import (
     Lot, Mouvement, Depense, Vente, Achat, Espece,
     CategorieDepense, Client, Task, Payment, Lettrage, PasswordResetCode,
-    CollecteOeufs, VenteOeufs, ConsommationAliment
+    CollecteOeufs, VenteOeufs, ConsommationAliment, PeseeProduction
 )
 
 from .serializers import (
@@ -47,6 +48,7 @@ from .serializers import (
     CollecteOeufsSerializer,
     VenteOeufsSerializer,
     ConsommationAlimentSerializer,
+    PeseeProductionSerializer,
 )
 from .egg_services import (
     create_egg_sale,
@@ -1731,6 +1733,106 @@ def api_consommation_aliment_detail(request, pk):
         consommation,
         context={"request": request},
     ).data)
+
+
+def _growth_tracking_payload(lot, request):
+    stock_actuel = max(get_lot_stock(lot), 0)
+    pesees = list(
+        PeseeProduction.objects.filter(
+            lot=lot,
+            exploitation=request.user.exploitation,
+        ).order_by("pesee_at", "id")
+    )
+    gmq_by_id = {}
+    previous = None
+    for pesee in pesees:
+        if previous is not None:
+            jours = (
+                timezone.localtime(pesee.pesee_at).date()
+                - timezone.localtime(previous.pesee_at).date()
+            ).days
+            if jours > 0:
+                gain_kg = pesee.poids_moyen_kg - previous.poids_moyen_kg
+                gmq_by_id[pesee.pk] = round(float(gain_kg * 1000 / jours), 1)
+        previous = pesee
+
+    latest = pesees[-1] if pesees else None
+    serializer = PeseeProductionSerializer(
+        pesees,
+        many=True,
+        context={"request": request, "gmq_by_id": gmq_by_id},
+    )
+    latest_average = (
+        latest.poids_moyen_kg.quantize(Decimal("0.001")) if latest else None
+    )
+    return {
+        "lot": lot.pk,
+        "lot_nom": lot.nom,
+        "effectif_actuel": stock_actuel,
+        "dernier_poids_moyen_kg": latest_average,
+        "biomasse_estimee_kg": (
+            (latest_average * stock_actuel).quantize(Decimal("0.001"))
+            if latest_average is not None else None
+        ),
+        "gmq_g_par_jour": gmq_by_id.get(latest.pk) if latest else None,
+        "pesees": serializer.data,
+    }
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated, HasExploitation])
+def api_pesees_production(request):
+    if request.method == "POST":
+        try:
+            lot_id = int(request.data.get("lot"))
+        except (TypeError, ValueError):
+            return Response({"lot": "Lot invalide."}, status=400)
+        try:
+            lot = Lot.objects.get(
+                pk=lot_id,
+                exploitation=request.user.exploitation,
+            )
+        except (Lot.DoesNotExist, ValueError, TypeError):
+            return Response({"lot": "Lot introuvable."}, status=404)
+
+        if lot.type_production != "CHAIR":
+            return Response(
+                {"lot": "Les pesées de croissance sont réservées aux lots CHAIR."},
+                status=400,
+            )
+        stock_actuel = max(get_lot_stock(lot), 0)
+        serializer = PeseeProductionSerializer(
+            data=request.data,
+            context={"request": request, "stock_actuel": stock_actuel},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save(
+            lot=lot,
+            exploitation=request.user.exploitation,
+            created_by=request.user,
+        )
+        return Response(_growth_tracking_payload(lot, request), status=201)
+
+    raw_lot_id = request.query_params.get("lot")
+    if not raw_lot_id:
+        return Response({"lot": "Indiquez un lot."}, status=400)
+    try:
+        lot_id = int(raw_lot_id)
+    except (TypeError, ValueError):
+        return Response({"lot": "Lot invalide."}, status=400)
+    try:
+        lot = Lot.objects.get(
+            pk=lot_id,
+            exploitation=request.user.exploitation,
+        )
+    except (Lot.DoesNotExist, ValueError, TypeError):
+        return Response({"lot": "Lot introuvable."}, status=404)
+    if lot.type_production != "CHAIR":
+        return Response(
+            {"lot": "Les pesées de croissance sont réservées aux lots CHAIR."},
+            status=400,
+        )
+    return Response(_growth_tracking_payload(lot, request))
 
 
 @api_view(["GET", "POST"])
