@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from django.test import TestCase
@@ -116,6 +116,70 @@ class EggCollectionApiTests(TestCase):
         self.assertEqual(movement.quantite_signee, 70)
         self.assertEqual(MouvementOeufs.objects.filter(collecte=collection).count(), 1)
 
+    def test_alveoles_and_remainder_are_canonicalized_without_migration(self):
+        collected_at = timezone.now().replace(microsecond=0)
+        payload = self.collection_payload()
+        payload.pop("nombre_collecte")
+        payload.update(collecte_at=collected_at.isoformat(), nombre_alveoles=61,
+                       oeufs_restants=17, nombre_casses=12, nombre_declasses=5,
+                       nombre_consommes_donnes=10)
+        response = self.client.post("/api/oeufs/collectes/", payload, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["nombre_collecte"], 1847)
+        self.assertEqual(response.data["nombre_commercialisable"], 1820)
+        self.assertEqual(response.data["nombre_alveoles"], 61)
+        self.assertEqual(response.data["oeufs_restants"], 17)
+        self.assertEqual(MouvementOeufs.objects.get(collecte_id=response.data["id"]).quantite_signee, 1820)
+        self.assertEqual(CollecteOeufs.objects.get(pk=response.data["id"]).collecte_at, collected_at)
+
+        updated = self.client.patch(
+            f"/api/oeufs/collectes/{response.data['id']}/",
+            {"nombre_alveoles": 62, "oeufs_restants": 5}, format="json",
+        )
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertEqual(updated.data["nombre_collecte"], 1865)
+        self.assertEqual(MouvementOeufs.objects.get(collecte_id=response.data["id"]).quantite_signee, 1838)
+
+    def test_old_raw_total_is_still_readable_as_alveoles_and_remainder(self):
+        response = self.client.post(
+            "/api/oeufs/collectes/",
+            self.collection_payload(nombre_collecte=70, nombre_casses=0,
+                                    nombre_declasses=0, nombre_consommes_donnes=0),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        listing = self.client.get(f"/api/oeufs/collectes/?lot={self.lot.pk}")
+        self.assertEqual((listing.data[0]["nombre_alveoles"], listing.data[0]["oeufs_restants"]), (2, 10))
+
+    def test_alveole_input_rejects_empty_invalid_and_ambiguous_collectes(self):
+        payload = self.collection_payload()
+        payload.pop("nombre_collecte")
+        for alveoles, restants in [(0, 0), (0, 30), (-1, 2), (0, -1)]:
+            response = self.client.post(
+                "/api/oeufs/collectes/",
+                {**payload, "nombre_alveoles": alveoles, "oeufs_restants": restants},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 400, (alveoles, restants, response.data))
+        response = self.client.post("/api/oeufs/collectes/", {
+            **payload, "nombre_alveoles": 1, "oeufs_restants": 0,
+            "nombre_collecte": 2500,
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_several_collectes_same_day_keep_distinct_times_and_order(self):
+        day = timezone.localdate()
+        for hour, alveoles, restants in [(8, 20, 12), (13, 18, 4), (17, 22, 19)]:
+            payload = self.collection_payload()
+            payload.pop("nombre_collecte")
+            payload.update(collecte_at=timezone.make_aware(
+                datetime.combine(day, time(hour, 10))
+            ).isoformat(), nombre_alveoles=alveoles, oeufs_restants=restants)
+            response = self.client.post("/api/oeufs/collectes/", payload, format="json")
+            self.assertEqual(response.status_code, 201, response.data)
+        response = self.client.get(f"/api/oeufs/collectes/?lot={self.lot.id}")
+        self.assertEqual([row["nombre_collecte"] for row in response.data], [679, 544, 612])
+
     def test_patch_collection_updates_existing_stock_entry(self):
         create_response = self.client.post(
             "/api/oeufs/collectes/",
@@ -166,6 +230,19 @@ class EggCollectionApiTests(TestCase):
 
         self.assertEqual(detail_response.status_code, 404)
         self.assertEqual(list_response.status_code, 404)
+        self.assertEqual(other_client.patch(
+            f"/api/oeufs/collectes/{own_collection_id}/",
+            {"nombre_alveoles": 3, "oeufs_restants": 0}, format="json",
+        ).status_code, 404)
+        self.assertEqual(other_client.delete(
+            f"/api/oeufs/collectes/{own_collection_id}/"
+        ).status_code, 404)
+        other_payload = self.collection_payload()
+        other_payload.pop("nombre_collecte")
+        other_payload.update(nombre_alveoles=3, oeufs_restants=0)
+        self.assertEqual(other_client.post(
+            "/api/oeufs/collectes/", other_payload, format="json",
+        ).status_code, 400)
 
     def test_rejects_collection_for_non_laying_lot(self):
         lot_chair = Lot.objects.create(

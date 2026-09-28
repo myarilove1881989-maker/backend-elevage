@@ -357,6 +357,9 @@ class MargeParLotSerializer(serializers.Serializer):
 # PRODUCTION D'ŒUFS
 # ===============================
 class CollecteOeufsSerializer(serializers.ModelSerializer):
+    CAPACITE_ALVEOLE = 30
+    nombre_alveoles = serializers.IntegerField(min_value=0, required=False, write_only=True)
+    oeufs_restants = serializers.IntegerField(min_value=0, max_value=29, required=False, write_only=True)
     nombre_commercialisable = serializers.IntegerField(read_only=True)
     lot_nom = serializers.CharField(source="lot.nom", read_only=True)
 
@@ -368,6 +371,8 @@ class CollecteOeufsSerializer(serializers.ModelSerializer):
             "lot_nom",
             "collecte_at",
             "nombre_collecte",
+            "nombre_alveoles",
+            "oeufs_restants",
             "nombre_casses",
             "nombre_declasses",
             "nombre_consommes_donnes",
@@ -377,6 +382,14 @@ class CollecteOeufsSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = ("created_at", "updated_at")
+        extra_kwargs = {"nombre_collecte": {"required": False}}
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["nombre_alveoles"], data["oeufs_restants"] = divmod(
+            instance.nombre_collecte, self.CAPACITE_ALVEOLE
+        )
+        return data
 
     def validate_lot(self, lot):
         request = self.context["request"]
@@ -390,7 +403,22 @@ class CollecteOeufsSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         instance = self.instance
 
+        alveoles = attrs.pop("nombre_alveoles", None)
+        restants = attrs.pop("oeufs_restants", None)
+        if alveoles is not None or restants is not None:
+            if alveoles is None or restants is None:
+                raise serializers.ValidationError(
+                    "Indiquez les alvéoles complètes et les œufs restants."
+                )
+            if "nombre_collecte" in attrs:
+                raise serializers.ValidationError(
+                    "Indiquez soit le total, soit les alvéoles et les œufs restants."
+                )
+            attrs["nombre_collecte"] = alveoles * self.CAPACITE_ALVEOLE + restants
+
         total = attrs.get("nombre_collecte", getattr(instance, "nombre_collecte", 0))
+        if total <= 0:
+            raise serializers.ValidationError("Une collecte doit contenir au moins un œuf.")
         casses = attrs.get("nombre_casses", getattr(instance, "nombre_casses", 0))
         declasses = attrs.get("nombre_declasses", getattr(instance, "nombre_declasses", 0))
         consommes = attrs.get(
