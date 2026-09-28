@@ -5,6 +5,7 @@ from rest_framework.exceptions import ValidationError
 
 from .models import (
     Achat,
+    AffectationMouvementOeufs,
     Client,
     CollecteOeufs,
     Lot,
@@ -50,6 +51,127 @@ def get_egg_stock(exploitation, lot=None):
     return mouvements.aggregate(total=Sum("quantite_signee"))["total"] or 0
 
 
+def get_dated_egg_stock(exploitation, lot):
+    """Expose la provenance uniquement si toutes les écritures sont réconciliées."""
+    collections = list(
+        CollecteOeufs.objects.filter(exploitation=exploitation, lot=lot)
+        .order_by("-collecte_at", "-id")
+        .values(
+            "id", "collecte_at", "nombre_collecte", "nombre_casses",
+            "nombre_declasses", "nombre_consommes_donnes",
+        )
+    )
+    allocated_by_collection = dict(
+        AffectationMouvementOeufs.objects.filter(
+            collecte__exploitation=exploitation,
+            collecte__lot=lot,
+            mouvement__exploitation=exploitation,
+            mouvement__lot=lot,
+        ).values("collecte_id").annotate(total=Sum("quantite"))
+        .values_list("collecte_id", "total")
+    )
+    production_by_collection = {
+        source_id: (amount, movement_type)
+        for source_id, amount, movement_type in MouvementOeufs.objects.filter(
+            exploitation=exploitation, lot=lot, collecte__isnull=False,
+        ).values_list("collecte_id", "quantite_signee", "type_mouvement")
+    }
+    allocated_total = sum(allocated_by_collection.values())
+    movements = MouvementOeufs.objects.filter(exploitation=exploitation, lot=lot)
+    exits = -(
+        movements.filter(quantite_signee__lt=0)
+        .aggregate(total=Sum("quantite_signee"))["total"] or 0
+    )
+    entries_without_collection = (
+        movements.filter(quantite_signee__gt=0, collecte__isnull=True)
+        .aggregate(total=Sum("quantite_signee"))["total"] or 0
+    )
+    global_stock = get_egg_stock(exploitation, lot)
+    candidate_total = 0
+    for item in collections:
+        commercialisable = item["nombre_collecte"] - (
+            item["nombre_casses"] + item["nombre_declasses"]
+            + item["nombre_consommes_donnes"]
+        )
+        attributed = allocated_by_collection.get(item["id"], 0)
+        item["nombre_commercialisable"] = commercialisable
+        item["sorties_affectees"] = attributed
+        candidate_total += commercialisable - attributed
+
+    unallocated_exits = exits - allocated_total
+    complete = (
+        unallocated_exits == 0 and entries_without_collection == 0
+        and global_stock == candidate_total
+        and all(production_by_collection.get(item["id"], (0, "PRODUCTION"))
+                == (item["nombre_commercialisable"], "PRODUCTION")
+                for item in collections)
+        and all(item["nombre_commercialisable"] >= item["sorties_affectees"]
+                for item in collections)
+    )
+    for item in collections:
+        item["restant"] = (
+            item["nombre_commercialisable"] - item["sorties_affectees"]
+            if complete else None
+        )
+    return {
+        "lot": lot.pk,
+        "stock_global": global_stock,
+        "origines_completes": complete,
+        "sorties_non_attribuees": unallocated_exits,
+        "entrees_hors_collecte": entries_without_collection,
+        "collectes": collections,
+    }
+
+
+@transaction.atomic
+def affect_egg_exit(mouvement, allocations):
+    """Affecte une sortie entière aux collectes explicitement désignées."""
+    if mouvement.lot_id is None:
+        raise ValidationError({"affectations": "La sortie doit appartenir à un lot."})
+    Lot.objects.select_for_update().get(
+        pk=mouvement.lot_id, exploitation_id=mouvement.exploitation_id,
+    )
+    mouvement = MouvementOeufs.objects.select_for_update().get(pk=mouvement.pk)
+    if mouvement.quantite_signee >= 0 or mouvement.type_mouvement == "PRODUCTION":
+        raise ValidationError({"affectations": "Seules les sorties peuvent être affectées."})
+    if mouvement.affectations.exists():
+        raise ValidationError({"affectations": "Cette sortie possède déjà des affectations."})
+    if not allocations or sum(item["quantite"] for item in allocations) != -mouvement.quantite_signee:
+        raise ValidationError({"affectations": "La totalité de la sortie doit être affectée."})
+    ids = [item["collecte"] for item in allocations]
+    if len(ids) != len(set(ids)):
+        raise ValidationError({"affectations": "Une collecte ne peut figurer qu'une fois."})
+    sources = {
+        item.pk: item for item in CollecteOeufs.objects.filter(
+            pk__in=ids, lot_id=mouvement.lot_id,
+            exploitation_id=mouvement.exploitation_id,
+        )
+    }
+    if len(sources) != len(ids):
+        raise ValidationError({"affectations": "Collecte introuvable dans cette exploitation et ce lot."})
+    previous = dict(
+        AffectationMouvementOeufs.objects.filter(collecte_id__in=ids)
+        .values("collecte_id").annotate(total=Sum("quantite"))
+        .values_list("collecte_id", "total")
+    )
+    for item in allocations:
+        source = sources[item["collecte"]]
+        if item["quantite"] <= 0:
+            raise ValidationError({"affectations": "Chaque quantité doit être positive."})
+        if source.collecte_at > mouvement.date or (
+            mouvement.vente_oeufs_id and
+            timezone.localdate(source.collecte_at) > mouvement.vente_oeufs.vente.date
+        ):
+            raise ValidationError({"affectations": "La collecte doit précéder la sortie et sa vente."})
+        if previous.get(source.pk, 0) + item["quantite"] > source.nombre_commercialisable:
+            raise ValidationError({"affectations": "Quantité insuffisante dans la collecte indiquée."})
+    return AffectationMouvementOeufs.objects.bulk_create([
+        AffectationMouvementOeufs(
+            mouvement=mouvement, collecte_id=item["collecte"], quantite=item["quantite"],
+        ) for item in allocations
+    ])
+
+
 def sync_collection_stock_movement(collection):
     commercialisable = collection.nombre_commercialisable
     if commercialisable <= 0:
@@ -89,8 +211,13 @@ def update_collection(*, serializer):
     original.refresh_from_db()
     if serializer.validated_data.get('lot', original.lot).pk != original.lot_id:
         raise ValidationError({'lot': 'Une collecte ne peut pas changer de lot.'})
+    attributed = original.affectations_sortie.aggregate(total=Sum("quantite"))["total"] or 0
+    if attributed and serializer.validated_data.get("collecte_at", original.collecte_at) != original.collecte_at:
+        raise ValidationError({"collecte_at": "Une collecte déjà utilisée ne peut pas être redatée."})
     previous_quantity = original.nombre_commercialisable
     collection = serializer.save()
+    if collection.nombre_commercialisable < attributed:
+        raise ValidationError("Cette correction dépasse les sorties déjà affectées à la collecte.")
     if get_egg_stock(collection.exploitation, collection.lot) + collection.nombre_commercialisable - previous_quantity < 0:
         raise ValidationError('Cette correction rendrait le stock d’œufs négatif.')
     sync_collection_stock_movement(collection)
@@ -101,6 +228,8 @@ def update_collection(*, serializer):
 def delete_collection(collection):
     Lot.objects.select_for_update().get(pk=collection.lot_id)
     collection.refresh_from_db()
+    if collection.affectations_sortie.exists():
+        raise ValidationError("Cette collecte est liée à des sorties déjà enregistrées.")
     if get_egg_stock(collection.exploitation, collection.lot) < collection.nombre_commercialisable:
         raise ValidationError('Cette collecte contient des œufs déjà sortis du stock.')
     collection.delete()
@@ -109,6 +238,7 @@ def delete_collection(collection):
 @transaction.atomic
 def create_egg_sale(*, validated_data, user):
     requested_lot = validated_data.pop("lot")
+    allocations = validated_data.pop("affectations", None)
     lot = Lot.objects.select_for_update().get(
         id=requested_lot.id,
         exploitation=user.exploitation,
@@ -144,7 +274,7 @@ def create_egg_sale(*, validated_data, user):
         montant_total=montant_total,
         **validated_data,
     )
-    MouvementOeufs.objects.create(
+    mouvement = MouvementOeufs.objects.create(
         exploitation=user.exploitation,
         lot=lot,
         type_mouvement="VENTE",
@@ -154,6 +284,8 @@ def create_egg_sale(*, validated_data, user):
         created_by=user,
         note=f"Vente d'œufs #{vente.pk}",
     )
+    if allocations is not None:
+        affect_egg_exit(mouvement, allocations)
     return vente_oeufs
 
 

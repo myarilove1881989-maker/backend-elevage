@@ -55,6 +55,7 @@ from .egg_services import (
     delete_collection,
     delete_egg_sale,
     get_egg_stock,
+    get_dated_egg_stock,
     get_live_birds,
     get_hen_days,
     save_collection,
@@ -1533,6 +1534,18 @@ def api_collecte_oeufs_detail(request, pk):
         collection,
         context={"request": request},
     ).data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, HasExploitation])
+def api_stock_date_oeufs(request):
+    lot_id = request.GET.get("lot")
+    if not lot_id:
+        return Response({"error": "Lot requis"}, status=400)
+    lot = _get_laying_lot(request, lot_id)
+    if lot is None:
+        return Response({"error": "Lot de ponte introuvable"}, status=404)
+    return Response(get_dated_egg_stock(request.user.exploitation, lot))
 
 
 @api_view(["GET"])

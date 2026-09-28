@@ -494,6 +494,44 @@ class MouvementOeufs(models.Model):
         return f"{self.type_mouvement} - {self.quantite_signee} œufs"
 
 
+class AffectationMouvementOeufs(models.Model):
+    """Origine déclarée d'une sortie d'œufs, sans modifier le mouvement comptable."""
+
+    mouvement = models.ForeignKey(
+        MouvementOeufs,
+        on_delete=models.CASCADE,
+        related_name="affectations",
+    )
+    collecte = models.ForeignKey(
+        CollecteOeufs,
+        on_delete=models.PROTECT,
+        related_name="affectations_sortie",
+    )
+    quantite = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(quantite__gt=0),
+                name="affectation_oeufs_quantite_positive",
+            ),
+            models.UniqueConstraint(
+                fields=["mouvement", "collecte"],
+                name="affectation_oeufs_origine_unique",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.mouvement_id and self.collecte_id:
+            if (self.mouvement.exploitation_id != self.collecte.exploitation_id
+                    or self.mouvement.lot_id != self.collecte.lot_id):
+                raise ValidationError("La sortie et la collecte doivent appartenir au même lot et à la même exploitation.")
+            if self.mouvement.quantite_signee >= 0:
+                raise ValidationError("Seule une sortie du stock peut être affectée à une collecte.")
+
+
 class VenteOeufs(models.Model):
     CONDITIONNEMENT_CHOICES = [
         ('UNITE', 'Unité'),

@@ -433,7 +433,13 @@ class CollecteOeufsSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class AffectationOeufsInputSerializer(serializers.Serializer):
+    collecte = serializers.IntegerField(min_value=1)
+    quantite = serializers.IntegerField(min_value=1)
+
+
 class VenteOeufsSerializer(serializers.ModelSerializer):
+    affectations = AffectationOeufsInputSerializer(many=True, write_only=True, required=False)
     client = serializers.IntegerField(write_only=True)
     client_id = serializers.IntegerField(source="vente.client_id", read_only=True)
     client_nom = serializers.CharField(source="vente.client.nom", read_only=True)
@@ -456,6 +462,7 @@ class VenteOeufsSerializer(serializers.ModelSerializer):
             "nombre_conditionnements",
             "oeufs_par_conditionnement",
             "nombre_oeufs",
+            "affectations",
             "prix_unitaire_conditionnement",
             "montant_total",
             "montant_paye",
