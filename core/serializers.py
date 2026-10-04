@@ -15,6 +15,7 @@ from .models import (
     Vente,
     Exploitation,
     CollecteOeufs,
+    MouvementOeufs,
     VenteOeufs,
     ConsommationAliment,
     PeseeProduction,
@@ -440,6 +441,7 @@ class AffectationOeufsInputSerializer(serializers.Serializer):
 
 class VenteOeufsSerializer(serializers.ModelSerializer):
     affectations = AffectationOeufsInputSerializer(many=True, write_only=True, required=False)
+    origines_stock = serializers.SerializerMethodField()
     nombre_alveoles = serializers.IntegerField(min_value=0, write_only=True, required=False)
     oeufs_supplementaires = serializers.IntegerField(
         min_value=0, max_value=29, write_only=True, required=False,
@@ -477,6 +479,7 @@ class VenteOeufsSerializer(serializers.ModelSerializer):
             "oeufs_supplementaires",
             "prix_total",
             "affectations",
+            "origines_stock",
             "prix_unitaire_conditionnement",
             "montant_total",
             "montant_paye",
@@ -490,6 +493,24 @@ class VenteOeufsSerializer(serializers.ModelSerializer):
             "montant_total",
             "created_at",
         )
+
+    def get_origines_stock(self, instance):
+        try:
+            movement = instance.mouvement_stock
+        except MouvementOeufs.DoesNotExist:
+            return []
+        items = sorted(
+            movement.affectations.all(),
+            key=lambda item: (item.collecte.collecte_at, item.collecte_id),
+        )
+        return [
+            {
+                "collecte": item.collecte_id,
+                "collecte_at": item.collecte.collecte_at,
+                "quantite": item.quantite,
+            }
+            for item in items
+        ]
 
     def validate_lot(self, lot):
         request = self.context["request"]

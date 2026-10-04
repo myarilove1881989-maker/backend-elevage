@@ -1,10 +1,11 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
-from core.models import Client, Espece, Lot, MouvementOeufs, User, Vente, VenteOeufs
+from core.models import Client, CollecteOeufs, Espece, Lot, MouvementOeufs, User, Vente, VenteOeufs
 
 
 class EggSalesApiTests(TestCase):
@@ -28,11 +29,18 @@ class EggSalesApiTests(TestCase):
             nom="Client œufs",
             exploitation=self.user.exploitation,
         )
+        collected_at = timezone.make_aware(datetime(2026, 9, 20, 8))
+        collection = CollecteOeufs.objects.create(
+            exploitation=self.user.exploitation, lot=self.lot,
+            collecte_at=collected_at, nombre_collecte=300,
+        )
         MouvementOeufs.objects.create(
             exploitation=self.user.exploitation,
             lot=self.lot,
             type_mouvement="PRODUCTION",
             quantite=300,
+            collecte=collection,
+            date=collected_at,
             created_by=self.user,
         )
 

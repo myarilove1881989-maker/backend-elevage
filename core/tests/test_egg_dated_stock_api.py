@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 
 from django.test import TestCase
 from django.utils import timezone
@@ -7,7 +8,7 @@ from rest_framework.test import APIClient
 from core.egg_services import affect_egg_exit
 from core.models import (
     AffectationMouvementOeufs, Client, Espece, Lot, MouvementOeufs,
-    User, VenteOeufs,
+    User, Vente, VenteOeufs,
 )
 
 
@@ -92,8 +93,23 @@ class DatedEggStockTests(TestCase):
     def test_legacy_sale_keeps_global_stock_but_not_fictional_origins(self):
         self.collect(26, 8, 500)
         self.collect(27, 8, 700)
-        sale = self.sell(600)  # Aucune affectation dans l'ancien contrat API.
-        self.assertEqual(sale.status_code, 201, sale.data)
+        # Écriture Phase 8 historique : elle ne passe pas par le nouveau FIFO.
+        vente = Vente.objects.create(
+            lot=self.lot, client=self.customer, date=date(2026, 9, 28),
+            quantite=600, prix_unitaire=Decimal("100.00"),
+        )
+        sale = VenteOeufs.objects.create(
+            vente=vente, exploitation=self.user.exploitation, lot=self.lot,
+            conditionnement="UNITE", nombre_conditionnements=600,
+            oeufs_par_conditionnement=1, nombre_oeufs=600,
+            prix_unitaire_conditionnement=Decimal("100.00"),
+            montant_total=Decimal("60000.00"),
+        )
+        MouvementOeufs.objects.create(
+            exploitation=self.user.exploitation, lot=self.lot,
+            type_mouvement="VENTE", quantite=600,
+            vente_oeufs=sale, date=self.at(28, 12),
+        )
         state = self.stock()
         self.assertEqual(state["stock_global"], 600)
         self.assertEqual(state["sorties_non_attribuees"], 600)
@@ -101,7 +117,7 @@ class DatedEggStockTests(TestCase):
         self.assertEqual([row["restant"] for row in state["collectes"]], [None, None])
         self.assertEqual(VenteOeufs.objects.count(), 1)
 
-        deletion = self.api.delete(f"/api/oeufs/ventes/{sale.data['id']}/")
+        deletion = self.api.delete(f"/api/oeufs/ventes/{sale.pk}/")
         self.assertEqual(deletion.status_code, 204)
         self.assertEqual(self.stock()["stock_global"], 1200)
         self.assertTrue(self.stock()["origines_completes"])

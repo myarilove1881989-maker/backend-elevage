@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -42,7 +42,7 @@ class ProductSaleApiTests(TestCase):
         )
         self.collection = CollecteOeufs.objects.create(
             lot=self.eggs, exploitation=self.user.exploitation,
-            collecte_at=timezone.now(), nombre_collecte=1000,
+            collecte_at=timezone.now() - timedelta(days=1), nombre_collecte=1000,
         )
         MouvementOeufs.objects.create(
             lot=self.eggs, exploitation=self.user.exploitation,
@@ -63,7 +63,7 @@ class ProductSaleApiTests(TestCase):
             "lot": self.eggs.pk, "client": self.client.pk,
             "conditionnement": "COMPOSE", "nombre_alveoles": 20,
             "oeufs_supplementaires": 8, "prix_total": "60800.00",
-            "date": "2026-09-28",
+            "date": timezone.localdate().isoformat(),
         }
         payload.update(overrides)
         return payload
@@ -193,7 +193,7 @@ class ProductSaleApiTests(TestCase):
         self.assertTrue(Mouvement.objects.filter(pk=old.pk).exists())
         self.assertEqual(self.api.get(f"/api/clients/{self.client.pk}/ventes/").data[0]["produit_vendu"], "ANIMAUX")
 
-    def test_mixed_egg_sale_reuses_vente_and_global_stock_without_fifo(self):
+    def test_mixed_egg_sale_reuses_vente_and_allocates_stock_fifo(self):
         detail = self.egg_sale()
         self.assertEqual(detail.nombre_oeufs, 608)
         self.assertEqual(detail.vente.quantite, 1)
@@ -207,8 +207,11 @@ class ProductSaleApiTests(TestCase):
         self.assertEqual(history["produit_vendu"], "OEUFS")
         self.assertEqual(history["nombre_oeufs"], 608)
         self.assertEqual(history["conditionnement"], "COMPOSE")
-        self.assertEqual(get_dated_egg_stock(self.user.exploitation, self.eggs)["sorties_non_attribuees"], 608)
-        self.assertIsNone(get_dated_egg_stock(self.user.exploitation, self.eggs)["collectes"][0]["restant"])
+        dated = get_dated_egg_stock(self.user.exploitation, self.eggs)
+        self.assertEqual(dated["sorties_non_attribuees"], 0)
+        self.assertTrue(dated["origines_completes"])
+        self.assertEqual(dated["collectes"][0]["restant"], 392)
+        self.assertEqual(detail.mouvement_stock.affectations.get().quantite, 608)
 
     def test_exact_total_does_not_need_fractions_of_a_price_per_egg(self):
         detail = self.egg_sale(prix_total="60000.00")

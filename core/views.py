@@ -20,7 +20,7 @@ import secrets
 # Django ORM
 from django.db.models import (
     IntegerField, Sum, F, Value, CharField,
-    Case, When, DecimalField, ExpressionWrapper
+    Case, When, DecimalField, ExpressionWrapper, prefetch_related_objects
 )
 from django.db.models.functions import Coalesce
 
@@ -1927,6 +1927,9 @@ def api_ventes_oeufs(request):
             )
         except ValueError as exc:
             return Response({"error": str(exc)}, status=400)
+        prefetch_related_objects(
+            [vente_oeufs], "mouvement_stock__affectations__collecte",
+        )
         return Response(
             VenteOeufsSerializer(vente_oeufs, context={"request": request}).data,
             status=201,
@@ -1934,7 +1937,9 @@ def api_ventes_oeufs(request):
 
     ventes = VenteOeufs.objects.filter(
         exploitation=request.user.exploitation,
-    ).select_related("vente", "vente__client", "lot")
+    ).select_related("vente", "vente__client", "lot", "mouvement_stock").prefetch_related(
+        "mouvement_stock__affectations__collecte",
+    )
     lot_id = request.GET.get("lot")
     client_id = request.GET.get("client")
     if lot_id:
@@ -1953,8 +1958,10 @@ def api_ventes_oeufs(request):
 def api_vente_oeufs_detail(request, pk):
     try:
         vente_oeufs = VenteOeufs.objects.select_related(
-            "vente", "vente__client", "lot"
-        ).get(id=pk, exploitation=request.user.exploitation)
+            "vente", "vente__client", "lot", "mouvement_stock"
+        ).prefetch_related("mouvement_stock__affectations__collecte").get(
+            id=pk, exploitation=request.user.exploitation,
+        )
     except VenteOeufs.DoesNotExist:
         return Response({"error": "Vente d'œufs introuvable"}, status=404)
 

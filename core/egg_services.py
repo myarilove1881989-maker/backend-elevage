@@ -123,6 +123,42 @@ def get_dated_egg_stock(exploitation, lot):
     }
 
 
+def plan_fifo_egg_sale(*, stock_state, quantity, sale_date, movement_at):
+    """Prépare le FIFO sans écriture, sous le verrou du lot appelant."""
+    if not stock_state["origines_completes"]:
+        raise ValueError(
+            "Origine du stock d'œufs indéterminée pour ce lot : "
+            "régularisez les anciennes sorties avant une nouvelle vente."
+        )
+
+    remaining = quantity
+    allocations = []
+    eligible_total = 0
+    for collection in sorted(
+        stock_state["collectes"], key=lambda item: (item["collecte_at"], item["id"]),
+    ):
+        available = collection["restant"]
+        if available <= 0:
+            continue
+        # Vente.date n'a pas d'heure : toutes les collectes du jour sont
+        # admissibles, sauf celles enregistrées dans le futur réel.
+        if (timezone.localdate(collection["collecte_at"]) > sale_date
+                or collection["collecte_at"] > movement_at):
+            continue
+        eligible_total += available
+        taken = min(available, remaining)
+        if taken:
+            allocations.append({"collecte": collection["id"], "quantite": taken})
+            remaining -= taken
+
+    if remaining:
+        raise ValueError(
+            f"Stock d'œufs insuffisant à la date de vente : "
+            f"{eligible_total} œufs disponibles."
+        )
+    return allocations
+
+
 @transaction.atomic
 def affect_egg_exit(mouvement, allocations):
     """Affecte une sortie entière aux collectes explicitement désignées."""
@@ -254,15 +290,30 @@ def create_egg_sale(*, validated_data, user):
     nombre_oeufs = nombre_conditionnements * oeufs_par_conditionnement
     prix_conditionnement = validated_data["prix_unitaire_conditionnement"]
     montant_total = nombre_conditionnements * prix_conditionnement
+    sale_date = vente_data.get("date", None) or timezone.now().date()
+    movement_at = timezone.now()
 
-    stock_disponible = get_egg_stock(user.exploitation, lot)
+    # Toutes les écritures de stock par API verrouillent ce lot. La lecture
+    # des restants et la vente appartiennent à la même transaction.
+    stock_state = get_dated_egg_stock(user.exploitation, lot)
+    stock_disponible = stock_state["stock_global"]
     if nombre_oeufs > stock_disponible:
         raise ValueError(f"Stock d'œufs insuffisant ({stock_disponible})")
+    if not stock_state["origines_completes"]:
+        raise ValueError(
+            "Origine du stock d'œufs indéterminée pour ce lot : "
+            "régularisez les anciennes sorties avant une nouvelle vente."
+        )
+    if allocations is None:
+        allocations = plan_fifo_egg_sale(
+            stock_state=stock_state, quantity=nombre_oeufs,
+            sale_date=sale_date, movement_at=movement_at,
+        )
 
     vente = Vente.objects.create(
         lot=lot,
         client=client,
-        date=vente_data.get("date", None) or timezone.now().date(),
+        date=sale_date,
         quantite=nombre_conditionnements,
         prix_unitaire=prix_conditionnement,
     )
@@ -279,13 +330,12 @@ def create_egg_sale(*, validated_data, user):
         lot=lot,
         type_mouvement="VENTE",
         quantite=nombre_oeufs,
-        date=timezone.now(),
+        date=movement_at,
         vente_oeufs=vente_oeufs,
         created_by=user,
         note=f"Vente d'œufs #{vente.pk}",
     )
-    if allocations is not None:
-        affect_egg_exit(mouvement, allocations)
+    affect_egg_exit(mouvement, allocations)
     return vente_oeufs
 
 
