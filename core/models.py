@@ -154,6 +154,11 @@ class Mouvement(models.Model):
     ]
 
     lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name='mouvements')
+    # Null for births recorded before Phase 10.1; never infer their origin.
+    lot_origine = models.ForeignKey(
+        Lot, on_delete=models.PROTECT, related_name='naissances_issues',
+        null=True, blank=True,
+    )
     type_mouvement = models.CharField(max_length=20, choices=TYPE_CHOICES)
 
     client = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, blank=True)

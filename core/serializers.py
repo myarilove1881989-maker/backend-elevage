@@ -110,6 +110,14 @@ class LotSerializer(serializers.ModelSerializer):
 # MOUVEMENT
 # ===============================
 class MouvementSerializer(serializers.ModelSerializer):
+    total_naissances = serializers.SerializerMethodField()
+    lot_origine_nom = serializers.CharField(source='lot_origine.nom', read_only=True, default=None)
+
+    def get_total_naissances(self, obj):
+        if obj.type_mouvement == 'NAISSANCE':
+            return obj.quantite + obj.mort_nes
+        return None
+
     def validate(self, attrs):
         movement_type = attrs.get('type_mouvement')
         if movement_type == 'NAISSANCE':
@@ -131,8 +139,29 @@ class MouvementSerializer(serializers.ModelSerializer):
             "quantite_signee",
             "mort_nes",
             "note",
+            "lot_origine",
+            "lot_origine_nom",
+            "total_naissances",
         ]
-        read_only_fields = ["quantite_signee"]
+        read_only_fields = ["quantite_signee", "lot_origine"]
+
+
+class NaissanceCreationSerializer(serializers.Serializer):
+    total_naissances = serializers.IntegerField(min_value=1)
+    mort_nes = serializers.IntegerField(min_value=0)
+    nom_nouveau_lot = serializers.CharField(max_length=100, trim_whitespace=True)
+    type_production = serializers.ChoiceField(
+        choices=Lot.TYPE_PRODUCTION_CHOICES, default='CHAIR',
+    )
+    date = serializers.DateField()
+    note = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        if attrs['mort_nes'] >= attrs['total_naissances']:
+            raise serializers.ValidationError({
+                'mort_nes': 'Au moins un animal doit naître vivant.',
+            })
+        return attrs
 
 
 # ===============================

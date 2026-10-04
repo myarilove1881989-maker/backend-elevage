@@ -40,6 +40,7 @@ from .serializers import (
     RegisterSerializer,
     LotSerializer,
     MouvementSerializer,
+    NaissanceCreationSerializer,
     DepenseSerializer,
     AchatSerializer,
     LotDetailSerializer,
@@ -453,6 +454,20 @@ def api_lot_detail(request, pk):
     marge = total_ca - total_depenses
 
     serializer = LotDetailSerializer(lot)
+    naissances_issues = [
+        {
+            "id": mouvement.pk,
+            "date": mouvement.date,
+            "total_naissances": mouvement.quantite + mouvement.mort_nes,
+            "mort_nes": mouvement.mort_nes,
+            "nes_vivants": mouvement.quantite,
+            "nouveau_lot_id": mouvement.lot_id,
+            "nouveau_lot_nom": mouvement.lot.nom,
+        }
+        for mouvement in lot.naissances_issues.filter(
+            exploitation=request.user.exploitation,
+        ).select_related('lot').order_by('-date', '-id')
+    ]
     ventes_oeufs = [
         {
             "id": item.pk,
@@ -468,6 +483,7 @@ def api_lot_detail(request, pk):
 
     return Response({
         **serializer.data,
+        "naissances_issues": naissances_issues,
         "ventes_oeufs": ventes_oeufs,
         "kpis": {
             "stock": stock,
@@ -499,6 +515,44 @@ def api_create_mouvement(request):
 
     if lot.exploitation != request.user.exploitation:
         return Response({"error": "Accès interdit"}, status=403)
+
+    if request.data.get('type_mouvement') == 'NAISSANCE':
+        # The selected lot is the origin. Only the newborn lot receives stock.
+        forbidden = {'quantite', 'espece', 'exploitation', 'client',
+                     'prix_unitaire', 'created_by', 'lot_origine'}
+        if forbidden.intersection(request.data):
+            return Response({"error": "Champs non autorisés pour une naissance."}, status=400)
+        for field in ('total_naissances', 'mort_nes'):
+            value = request.data.get(field)
+            if isinstance(value, bool) or not isinstance(value, (int, str)) or not str(value).isascii() or not str(value).isdigit():
+                return Response({field: "Nombre entier positif requis."}, status=400)
+        birth = NaissanceCreationSerializer(data=request.data)
+        if not birth.is_valid():
+            return Response(birth.errors, status=400)
+        data = birth.validated_data
+        nouveau_lot = Lot.objects.create(
+            nom=data['nom_nouveau_lot'],
+            espece=lot.espece,
+            exploitation=lot.exploitation,
+            date_debut=data['date'],
+            date_naissance=data['date'],
+            type_production=data['type_production'],
+            statut_production='ELEVAGE',
+            created_by=request.user,
+        )
+        mouvement = Mouvement.objects.create(
+            lot=nouveau_lot, lot_origine=lot,
+            exploitation=lot.exploitation, created_by=request.user,
+            type_mouvement='NAISSANCE',
+            quantite=data['total_naissances'] - data['mort_nes'],
+            mort_nes=data['mort_nes'],
+            date=data['date'], note=data['note'],
+        )
+        return Response({
+            **MouvementSerializer(mouvement).data,
+            'nes_vivants': mouvement.quantite,
+            'nouveau_lot': {'id': nouveau_lot.pk, 'nom': nouveau_lot.nom},
+        }, status=201)
 
     raw_quantity = request.data.get("quantite", 0)
     if isinstance(raw_quantity, bool) or not str(raw_quantity).isdigit():
@@ -575,6 +629,21 @@ def api_delete_mouvement(request, pk):
         mouvement = Mouvement.objects.select_for_update().get(pk=pk, lot=lot)
     except Mouvement.DoesNotExist:
         return Response({"error": "Introuvable"}, status=404)
+    if mouvement.type_mouvement == 'NAISSANCE' and mouvement.lot_origine_id:
+        # This lot was created by this birth. Never cascade-delete its later work.
+        dependent_relations = (
+            'ventes', 'depenses', 'achats', 'collectes_oeufs',
+            'mouvements_oeufs', 'ventes_oeufs', 'consommations_aliment',
+            'pesees_production', 'naissances_issues',
+        )
+        if (lot.mouvements.exclude(pk=mouvement.pk).exists() or
+                any(getattr(lot, name).exists() for name in dependent_relations)):
+            return Response({
+                'error': 'Ce nouveau lot a déjà des opérations : suppression impossible.'
+            }, status=409)
+        mouvement.delete()
+        lot.delete()
+        return Response({'message': 'Naissance et nouveau lot supprimés'}, status=200)
     if mouvement.type_mouvement == "NAISSANCE" and get_lot_stock(lot) < mouvement.quantite:
         return Response({"error": "Cette naissance a déjà été utilisée par des sorties."}, status=400)
 
@@ -1231,6 +1300,7 @@ def api_create_achat(request):
 # ===============================
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@transaction.atomic
 def api_delete_achat(request, pk):
 
     try:
@@ -1242,6 +1312,11 @@ def api_delete_achat(request, pk):
         return Response({"error": "Accès interdit"}, status=403)
 
     lot = achat.lot
+
+    if lot.naissances_issues.exists():
+        return Response({
+            "error": "Ce lot est l'origine de naissances : suppression impossible."
+        }, status=409)
 
     # Une suppression d'achat ne doit pas effacer ventes, lettrages ou stock
     # d'œufs par cascade. Le lot doit être traité explicitement à part.
