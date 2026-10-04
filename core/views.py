@@ -118,7 +118,11 @@ def get_lot_stock(lot):
         total=Sum('quantite')
     )['total'] or 0
 
-    return total_achats - total_sorties
+    total_naissances = Mouvement.objects.filter(
+        lot=lot, type_mouvement='NAISSANCE',
+    ).aggregate(total=Sum('quantite'))['total'] or 0
+
+    return total_achats + total_naissances - total_sorties
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
@@ -496,16 +500,16 @@ def api_create_mouvement(request):
     if lot.exploitation != request.user.exploitation:
         return Response({"error": "Accès interdit"}, status=403)
 
-    try:
-        quantite = int(request.data.get("quantite", 0))
-    except (TypeError, ValueError):
+    raw_quantity = request.data.get("quantite", 0)
+    if isinstance(raw_quantity, bool) or not str(raw_quantity).isdigit():
         return Response({"error": "Quantité invalide"}, status=400)
+    quantite = int(raw_quantity)
     if quantite <= 0:
         return Response({"error": "La quantité doit être positive"}, status=400)
 
     type_mouvement = request.data.get("type_mouvement")
 
-    if type_mouvement not in ["ACHAT", "VENTE", "MORTALITE", "DON", "VOL"]:
+    if type_mouvement not in ["ACHAT", "VENTE", "MORTALITE", "DON", "VOL", "NAISSANCE"]:
         return Response({"error": "Type invalide"}, status=400)
 
     client = None
@@ -518,7 +522,7 @@ def api_create_mouvement(request):
             return Response({"error": "Client invalide"}, status=400)
 
     stock = get_lot_stock(lot)
-    if type_mouvement != "ACHAT" and quantite > stock:
+    if type_mouvement not in ("ACHAT", "NAISSANCE") and quantite > stock:
         return Response({"error": f"Stock insuffisant ({stock})"}, status=400)
 
     serializer = MouvementSerializer(data=request.data)
@@ -558,12 +562,21 @@ def api_create_mouvement(request):
 def api_delete_mouvement(request, pk):
 
     try:
-        mouvement = Mouvement.objects.select_for_update().get(id=pk)
+        mouvement = Mouvement.objects.get(id=pk)
     except Mouvement.DoesNotExist:
         return Response({"error": "Introuvable"}, status=404)
 
     if mouvement.lot.exploitation != request.user.exploitation:
         return Response({"error": "Accès interdit"}, status=403)
+
+    # Même ordre de verrous que la création : lot, puis mouvement.
+    lot = Lot.objects.select_for_update().get(pk=mouvement.lot_id)
+    try:
+        mouvement = Mouvement.objects.select_for_update().get(pk=pk, lot=lot)
+    except Mouvement.DoesNotExist:
+        return Response({"error": "Introuvable"}, status=404)
+    if mouvement.type_mouvement == "NAISSANCE" and get_lot_stock(lot) < mouvement.quantite:
+        return Response({"error": "Cette naissance a déjà été utilisée par des sorties."}, status=400)
 
     if mouvement.type_mouvement == "VENTE":
         if not mouvement.vente_id:
@@ -929,12 +942,13 @@ def api_stock_detail(request):
 )
 
     data = mouvements.aggregate(
-        stock_initial=Sum(Case(When(type_mouvement='ACHAT', then=F('quantite')))),
+        stock_initial=Sum(Case(When(type_mouvement__in=['ACHAT', 'NAISSANCE'], then=F('quantite')))),
         stock_restant=Sum('quantite_signee'),
         vendu=Sum(Case(When(type_mouvement='VENTE', then=F('quantite')))),
         mortalite=Sum(Case(When(type_mouvement='MORTALITE', then=F('quantite')))),
         vol=Sum(Case(When(type_mouvement='VOL', then=F('quantite')))),
         don=Sum(Case(When(type_mouvement='DON', then=F('quantite')))),
+        naissances=Sum(Case(When(type_mouvement='NAISSANCE', then=F('quantite')))),
     )
 
     data = {k: v or 0 for k, v in data.items()}

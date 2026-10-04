@@ -18,17 +18,24 @@ from .models import (
 
 def get_live_birds(lot):
     total_achats = Achat.objects.filter(lot=lot).aggregate(total=Sum("quantite"))["total"] or 0
+    total_naissances = Mouvement.objects.filter(
+        lot=lot, type_mouvement="NAISSANCE",
+    ).aggregate(total=Sum("quantite"))["total"] or 0
     total_sorties = Mouvement.objects.filter(
         lot=lot,
         type_mouvement__in=["VENTE", "MORTALITE", "DON", "VOL"],
     ).aggregate(total=Sum("quantite"))["total"] or 0
-    return max(total_achats - total_sorties, 0)
+    return max(total_achats + total_naissances - total_sorties, 0)
 
 
 def get_hen_days(lot, start, end):
     """Effectif par jour, mouvements datés inclus, pour la période sélectionnée."""
     events = {}
     for row in Achat.objects.filter(lot=lot, date__lte=end).values('date').annotate(n=Sum('quantite')):
+        events[row['date']] = events.get(row['date'], 0) + row['n']
+    for row in Mouvement.objects.filter(
+        lot=lot, date__lte=end, type_mouvement='NAISSANCE',
+    ).values('date').annotate(n=Sum('quantite')):
         events[row['date']] = events.get(row['date'], 0) + row['n']
     for row in Mouvement.objects.filter(
         lot=lot, date__lte=end, type_mouvement__in=['VENTE', 'MORTALITE', 'DON', 'VOL']

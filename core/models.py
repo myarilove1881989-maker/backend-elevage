@@ -150,6 +150,7 @@ class Mouvement(models.Model):
         ('MORTALITE', 'Mortalité'),
         ('DON', 'Don'),
         ('VOL', 'Vol'),
+        ('NAISSANCE', 'Naissance'),
     ]
 
     lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name='mouvements')
@@ -173,10 +174,12 @@ class Mouvement(models.Model):
 
     prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     montant_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    mort_nes = models.PositiveIntegerField(default=0)
+    note = models.TextField(blank=True, default='')
 
     def save(self, *args, **kwargs):
 
-        if self.type_mouvement == 'ACHAT':
+        if self.type_mouvement in ('ACHAT', 'NAISSANCE'):
             self.quantite_signee = abs(self.quantite)
         else:
             self.quantite_signee = -abs(self.quantite)

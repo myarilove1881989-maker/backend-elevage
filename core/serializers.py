@@ -110,6 +110,15 @@ class LotSerializer(serializers.ModelSerializer):
 # MOUVEMENT
 # ===============================
 class MouvementSerializer(serializers.ModelSerializer):
+    def validate(self, attrs):
+        movement_type = attrs.get('type_mouvement')
+        if movement_type == 'NAISSANCE':
+            if attrs.get('prix_unitaire') is not None or attrs.get('client') is not None:
+                raise serializers.ValidationError('Une naissance ne possède ni prix ni client.')
+        elif attrs.get('mort_nes', 0):
+            raise serializers.ValidationError({'mort_nes': 'Réservé aux naissances.'})
+        return attrs
+
     class Meta:
         model = Mouvement
         fields = [
@@ -119,7 +128,11 @@ class MouvementSerializer(serializers.ModelSerializer):
             "date",
             "prix_unitaire",
             "client",  # 🔥 IMPORTANT (ajout pour client)
+            "quantite_signee",
+            "mort_nes",
+            "note",
         ]
+        read_only_fields = ["quantite_signee"]
 
 
 # ===============================
@@ -329,6 +342,7 @@ class StockDetailSerializer(serializers.Serializer):
     mortalite = serializers.IntegerField()
     vol = serializers.IntegerField()
     don = serializers.IntegerField()
+    naissances = serializers.IntegerField()
 
 
 class CAParLotSerializer(serializers.Serializer):
