@@ -27,6 +27,13 @@ Référence : https://developer.android.com/reference/android/security/keystore/
   Deuxième primary ACTIVE refusé par contrainte (23505) ; concurrence verte.
 - Serveur PostgreSQL temporaire arrêté après validation.
 
+Une preuve publique produite par le vrai Keystore Android API 24 a ensuite
+été soumise à l'API Django sur le même cluster PostgreSQL local isolé :
+activation acceptée, corps altéré refusé, défi réutilisé refusé. La clé
+privée n'a pas été exportée. La suite PostgreSQL complète (183 tests,
+181 réussis et 2 skips SQLite attendus), les migrations et les contrôles
+SQL ont tous été relancés avec succès ; le serveur local a été arrêté.
+
 Le premier lancement SQLite échouait sur deux tests d'achat à cause d'un
 ancien print avec emoji non encodable sur une sortie Windows cp1252.
 Les deux prints de débogage de l'endpoint achat ont été retirés ; la suite
@@ -40,8 +47,12 @@ tâches et les tâches générales. Le stock confirmé est agrégé côté serve
 sans requête supplémentaire par lot. Six tests couvrent pagination,
 isolation, droits, coût des requêtes et refus des écritures.
 
-Cette adaptation backend est validée, mais **la phase 2C complète ne l'est
-pas encore**. L'enrôlement Flutter, le cache, les sessions personnelles et
-la preuve Keystore/chiffrement sur Android doivent encore être validés.
-Aucune phase 2D, intégration main, migration production ou activation
-offline n'est autorisée par ce seul checkpoint.
+Le socle 2C est maintenant validé au checkpoint mobile
+`9e5937846340e09e51c3c287b5de576e0bb02867`, workflow `37613201556` :
+126 tests Flutter, Web et APK release, parcours personnel Jean/Paul sur
+API 24 x86_64, Keystore dans deux processus et fichier Android illisible
+par SQLite standard. La signature native est acceptée par cette API
+PostgreSQL locale ; corps altéré et rejeu sont refusés.
+La phase 2D peut commencer. Aucun merge de production, déploiement,
+migration production ou activation offline n'a eu lieu. Les phases
+suivantes et toutes les portes finales restent nécessaires.
