@@ -37,5 +37,9 @@ def audited_endpoint(function):
             response = function(request, *args, **kwargs)
             if response.status_code >= 400:
                 transaction.set_rollback(True)
+            else:
+                farm = Exploitation.objects.get(pk=request.user.exploitation_id)
+                farm.business_revision += 1
+                farm.save(update_fields=['business_revision'])
             return response
     return wrapped

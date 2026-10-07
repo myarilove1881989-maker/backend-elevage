@@ -125,11 +125,19 @@ def process_pending(device_id):
                 # Business failure rolls back only this application savepoint.
                 with transaction.atomic(), audit_scope(context_for(row)):
                     entity = HANDLERS[row.entity_type](row, member.user)
+                    if row.operation_type == 'CREATE' and row.entity_type != 'CLIENT':
+                        from .terrain_operations import map_entity
+                        map_entity(row, row.entity_type, entity)
+                    farm.business_revision += 1
+                    farm.save(update_fields=['business_revision'])
                     result.business_status = 'CONFIRMED'
                     result.reason_code = result.reason_text = ''
                     result.server_entity_type = row.entity_type
                     result.server_entity_id = str(entity.pk)
                     result.server_version = str(getattr(entity, 'version', ''))
+                    result.affected_lot_ids = getattr(entity, '_terrain_lot_ids', [])
+                    if result.affected_lot_ids:
+                        result.server_version = f'farm:{farm.business_revision}'
                     result.applied_at = timezone.now()
                     result.save()
                     AuditEvent.objects.create(exploitation_id=farm_id, actor_user_id=row.author_user_id,
@@ -145,6 +153,7 @@ def process_pending(device_id):
                 code = 'BUSINESS_VALIDATION_REQUIRED'
             if code:
                 result.refresh_from_db()
+                farm.refresh_from_db()
                 with audit_scope(context_for(row), reason_code=code):
                     result.business_status = 'NEEDS_RECONCILIATION'
                     result.reason_code = code
@@ -154,10 +163,16 @@ def process_pending(device_id):
             break
 
 
+@transaction.atomic
 def current_receipts(device_id, operation_ids):
     from .terrain_transport import receipt
     farm_id = DeviceRegistration.objects.values_list('exploitation_id', flat=True).get(pk=device_id)
+    Exploitation.objects.select_for_update().get(pk=farm_id)
     rows = TerrainSubmission.objects.filter(exploitation_id=farm_id,
         client_operation_id__in=operation_ids).select_related('outcome')
     by_id = {str(row.client_operation_id): receipt(row) for row in rows}
     return [by_id[str(key)] for key in operation_ids if str(key) in by_id]
+
+
+from .terrain_operations import HANDLERS as OPERATION_HANDLERS  # noqa: E402
+HANDLERS.update(OPERATION_HANDLERS)

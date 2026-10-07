@@ -56,6 +56,7 @@ class Exploitation(models.Model):
     date_creation = models.DateTimeField(auto_now_add=True)
     offline_policy_enabled = models.BooleanField(default=False)
     write_generation = models.PositiveIntegerField(default=1)
+    business_revision = models.PositiveBigIntegerField(default=0)
 
     def __str__(self):
         return self.nom

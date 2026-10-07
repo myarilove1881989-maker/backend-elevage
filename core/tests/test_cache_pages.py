@@ -48,7 +48,8 @@ class OfflineCachePageTests(TestCase):
             lot = Lot.objects.create(nom=f'Lot{i}', exploitation=self.owner.exploitation,
                                      espece=species, date_debut=date.today())
             Mouvement.objects.create(lot=lot, type_mouvement='ACHAT', quantite=10, date=date.today())
-        with self.assertNumQueries(2):
+        # Membership, locked farm, one stock query and atomic savepoint pair.
+        with self.assertNumQueries(5):
             response = self.api.get('/api/cache-page/', {'collection': 'lots'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data['results']), 20)

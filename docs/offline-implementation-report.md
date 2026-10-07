@@ -72,4 +72,36 @@ Première suite PostgreSQL de ce checkpoint : 207 tests, deux erreurs de
 longueur des nouveaux codes de conflit dans AuditEvent.reason_code (30).
 SQLite n'impose pas la longueur VARCHAR. Les codes ont été raccourcis sans
 tronquer l'historique ni modifier le schéma d'audit. Les assertions vérifient
-aussi l'événement d'audit correspondant. Relance complète en cours.
+aussi l'événement d'audit correspondant. Relance finale : SQLite 207 tests
+(202 réussis, 5 skips PG), PostgreSQL 207 tests (205 réussis, 2 skips SQLite),
+serveur de test arrêté. Sources validées : serveur
+`c0bc8473594e49d36a60a8415ca5346227520967`, mobile
+`e64ca3f056d4c46425defbd40139d867508f37e8`. CI `37627927982` : 145 tests
+Flutter, Web/APK/API 24 et formulaire client sans réseau passent.
+
+## Phase 2E — extension opérations terrain, validation EN COURS
+
+Ajout des dépenses, alimentation, pesées, collectes, mortalité/don/vol,
+achats et naissances. Les achats réutilisent AchatSerializer ; les collectes
+réutilisent save_collection et leur mouvement de stock. Les naissances
+créent un lot enfant de vivants, sans modifier le parent ni inclure les
+mort-nés dans le stock. Les références locales sont résolues exclusivement
+par une correspondance confirmée dans la même exploitation.
+
+Migration additive 0022 : révision métier de l'exploitation et lots touchés
+du résultat terrain. Les écritures en ligne et l'application terrain
+incrémentent la révision sous verrou d'exploitation. Les pages de cache et
+reçus de stock utilisent le même verrou pour fournir un stock avec sa
+révision, sans dépendre de l'horloge Android. Le cache conserve une révision
+plus récente reçue pendant le chargement. Stock animaux et stock œufs restent
+distincts. Le nombre de requêtes de page de lots reste constant, avec le
+verrou d'exploitation et les savepoints atomiques désormais comptabilisés.
+
+Tests ciblés opérations : 10 tests, 9 réussis et 1 concurrence PostgreSQL
+ignorée sous SQLite. Première exécution : référence dépense recherchée avec
+un champ exploitation inexistant ; corrigée vers lot__exploitation, puis
+relancée avec succès. SQLite complet : 217 tests, 211 réussis et 6 skips PG.
+PostgreSQL complet : 217 tests, 215 réussis et 2 skips SQLite ; toutes les
+migrations, contrôles et tests de concurrence passent, serveur de test arrêté.
+Validations mobiles en cours. Ventes, paiements et phases 2F
+suivantes restent non commencés.

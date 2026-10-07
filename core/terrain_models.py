@@ -70,6 +70,7 @@ class TerrainOutcome(AuditedModel):
     server_entity_id = models.CharField(max_length=100, blank=True)
     server_version = models.CharField(max_length=100, blank=True)
     applied_at = models.DateTimeField(null=True)
+    affected_lot_ids = models.JSONField(default=list)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
