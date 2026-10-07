@@ -250,3 +250,36 @@ Première exécution ciblée : six erreurs de référence à un champ exploitati
 au lieu de l’identifiant numérique AuditEvent, corrigées sans modifier l’original.
 15 contrôles ciblés SQLite attendus avant les régressions complètes. Réversion
 des opérations appliquées et interfaces restent à construire ; phase 2G non validée.
+
+## Clôture 2G — 7 octobre 2026
+
+Sources validées : backend `e9c4ac811af6f2950b05b37cdda14ecdcc10591f`,
+mobile `2f3588ba8dbd9712a77bf406f574d5b501337eb5`.
+Décisions motivées immuables, UUID idempotents et versions attendues ;
+auteur original distinct du décideur, sans réactivation implicite.
+Annulation avant application, corrections, réversions avec compensations
+et faits originaux conservés couvrent les opérations terrain. L'encaissement
+physique est conservé intégralement ; sa réaffectation est explicite.
+Les tâches exigent leur version courante et conservent le compte rendu
+original. Les clients archivés et reçus versionnés résistent au cache ancien.
+Historiques paginés, filtres Owner et journal comprenant les modifications
+ultérieures des objets dérivés de l'audit de la même exploitation.
+
+SQLite : 269 tests, 256 passés, 13 exclusivement PostgreSQL ignorés.
+PostgreSQL 17.11 local isolé : 269 tests, 267 passés, 2 exclusivement SQLite
+ignorés. Migrations jusqu'à 0031 et token_blacklist, check, makemigrations
+--check, SQL append-only et concurrence réelle passent ; serveur arrêté.
+Les échecs intermédiaires sont conservés, dont nettoyage d'une police
+Windows en G3 puis 8 tests admin isolés et suite complète réussis sans
+suppression de contrôle, import de test et pagination mobile corrigés.
+
+CI finale `37673915386` : 181 tests Flutter, 62 infos sans erreur ni warning,
+Web release, APK debug et ARM64 release 28,6 MB, chiffrement réussi.
+Android API 24 : six opérations de Jean et décision motivée du propriétaire
+réussies en 23s, original_author=2 et decision_actor=1. Deux processus
+Keystore et cache illisible par SQLite ordinaire passent.
+Les échanges HTTP natifs restent des fixtures ; le parcours complet contre
+le backend métier réel demeure requis en phase 2I avant intégration V1.
+
+Phase 2G validée. PR backend #10 et mobile #12 restent en brouillon.
+Aucun merge, déploiement, test de production ni activation de politique réelle.
