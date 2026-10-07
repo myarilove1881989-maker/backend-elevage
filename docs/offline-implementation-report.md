@@ -105,3 +105,31 @@ PostgreSQL complet : 217 tests, 215 réussis et 2 skips SQLite ; toutes les
 migrations, contrôles et tests de concurrence passent, serveur de test arrêté.
 Validations mobiles en cours. Ventes, paiements et phases 2F
 suivantes restent non commencés.
+
+## Clôture 2E — 7 octobre 2026
+
+Sources validées : backend `5e146d76de58658d7ec7fd95e196693389ce2b97`,
+mobile `6aa7ab9179d3b3796bc8585e3ca0d97c193fb1b8`.
+Clients, comptes rendus de tâches, dépenses, alimentation, pesées, collectes,
+mortalités, dons, vols, achats et naissances sont inclus. Achats et enfants
+ont un UUID de lot provisoire résolu dans la même exploitation. Les mort-nés
+ne contribuent pas au stock et le lot parent reste inchangé.
+
+SQLite : 217 tests, 211 réussis et 6 skips PostgreSQL. PostgreSQL 17.11
+local isolé : 217 tests, 215 réussis et 2 skips SQLite, migrations jusqu'à
+0022 et token_blacklist, check et makemigrations --check réussis. Les
+retraits simultanés conservent deux déclarations, appliquent un seul retrait
+et laissent un stock de 5. Le cluster de test est arrêté.
+
+CI mobile `37635935971` : 160 tests réussis ; analyse sans erreur ni warning
+(61 infos conservées), lockfile strict, Web release, APK debug et ARM64
+release (28,4 MB). Android API 24 réelle : profils Jean/Paul et auteurs
+préservés, formulaire client offline et achat de 3 à 13,01 donnant 39,03,
+projection et réouverture de la file, Keystore dans deux processus et
+preuve de fichier chiffré illisible par SQLite ordinaire. Les échanges HTTP
+du parcours UI sont synthétiques ; le parcours métier natif avec backend
+réel, redémarrage complet et mise à jour APK reste à valider en 2I.
+
+Phase 2E validée ; ventes, FIFO et encaissements commencent ensuite en 2F.
+PR backend #8 et mobile #10 restent en brouillon. Aucun merge, déploiement,
+test de production ni activation de politique réelle.
