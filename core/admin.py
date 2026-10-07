@@ -9,6 +9,19 @@ from .models import (
     Achat, CategorieDepense, Client, Depense, Espece, Exploitation,
     Lettrage, Lot, Mouvement, Payment, Task, User, Vente,
 )
+from .audit import ActorContext, audit_scope, record, snapshot, AuditedModel, delete_with_audit
+
+
+def object_farm_id(obj):
+    if isinstance(obj, Exploitation):
+        return obj.pk
+    if getattr(obj, 'exploitation_id', None):
+        return obj.exploitation_id
+    if getattr(obj, 'lot_id', None):
+        return obj.lot.exploitation_id
+    if getattr(obj, 'vente_id', None):
+        return obj.vente.lot.exploitation_id
+    return None
 
 admin.site.site_header = "Administration Elev'Age"
 admin.site.site_title = "Elev'Age"
@@ -19,6 +32,31 @@ class SuperuserOnlyAdminMixin:
     """Reserve les données globales aux seuls superutilisateurs."""
 
     actions = ("export_as_csv",)
+
+    def save_model(self, request, obj, form, change):
+        farm_id = object_farm_id(obj)
+        with audit_scope(ActorContext(request.user.pk, farm_id or request.user.exploitation_id,
+                                     decision_actor_id=request.user.pk), reason_code='ADMIN_CHANGE'):
+            before = snapshot(type(obj).objects.get(pk=obj.pk)) if change else {}
+            super().save_model(request, obj, form, change)
+            if not isinstance(obj, AuditedModel):
+                record(obj, 'UPDATE' if change else 'CREATE', before, snapshot(obj), category='ADMIN')
+
+    def save_related(self, request, form, formsets, change):
+        with audit_scope(ActorContext(request.user.pk, object_farm_id(form.instance) or request.user.exploitation_id,
+                                     decision_actor_id=request.user.pk), reason_code='ADMIN_RELATED'):
+            super().save_related(request, form, formsets, change)
+
+    def delete_model(self, request, obj):
+        with audit_scope(ActorContext(request.user.pk, object_farm_id(obj) or request.user.exploitation_id,
+                                     decision_actor_id=request.user.pk), reason_code='ADMIN_DELETE'):
+            if not isinstance(obj, AuditedModel):
+                record(obj, 'DELETE', snapshot(obj), {}, category='ADMIN')
+            delete_with_audit(type(obj).objects.filter(pk=obj.pk))
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            self.delete_model(request, obj)
 
     @admin.action(description="Exporter les éléments sélectionnés en CSV")
     def export_as_csv(self, request, queryset):
@@ -82,6 +120,12 @@ class LettrageInline(admin.TabularInline):
 
 @admin.register(User)
 class CustomUserAdmin(SuperuserOnlyAdminMixin, UserAdmin):
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj:
+            fields.append('exploitation')
+        return fields
+
     list_display = (
         "username", "email", "exploitation", "is_active", "is_staff",
         "is_superuser", "date_joined", "last_login",
@@ -96,6 +140,12 @@ class CustomUserAdmin(SuperuserOnlyAdminMixin, UserAdmin):
 
 @admin.register(Exploitation)
 class ExploitationAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj:
+            fields.extend(('proprietaire', 'offline_policy_enabled', 'write_generation'))
+        return fields
+
     list_display = (
         "nom", "proprietaire", "utilisateurs", "lots", "clients",
         "chiffre_affaires", "paiements", "date_creation",
@@ -327,3 +377,22 @@ class LettrageAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
     @admin.display(description="Exploitation")
     def exploitation_display(self, obj):
         return obj.vente.lot.exploitation
+
+
+from .models import AuditEvent, ExploitationMembership, DeviceRegistration, OfflineAuthorization
+
+
+class FoundationReadOnlyAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
+    actions = ()
+    def has_add_permission(self, request):
+        return False
+    def has_change_permission(self, request, obj=None):
+        return False
+    def has_delete_permission(self, request, obj=None):
+        return False
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in self.model._meta.fields]
+
+
+for foundation_model in (AuditEvent, ExploitationMembership, DeviceRegistration, OfflineAuthorization):
+    admin.site.register(foundation_model, FoundationReadOnlyAdmin)
