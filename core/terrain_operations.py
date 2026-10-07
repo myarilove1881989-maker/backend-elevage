@@ -60,7 +60,7 @@ def context(user, **extra):
 
 
 def stock(lot):
-    return lot.mouvements.aggregate(total=Sum('quantite_signee'))['total'] or 0
+    return lot.stock
 
 
 def mark_lots(entity, *lots):

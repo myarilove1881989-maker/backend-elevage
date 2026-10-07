@@ -5,7 +5,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
-from .models import TerrainSubmission
+from .models import TerrainSubmission, EncaissementTerrain, Vente
+from django.db.models import Sum, Q
 from .permissions import require_member
 from .terrain_reconciliation import DecisionInput, decide
 from .terrain_transport import receipt
@@ -60,3 +61,24 @@ def reconciliation_detail(request, operation_uuid):
         'decision_uuid', 'decision_actor_id', 'action', 'reason', 'effective_payload',
         'before_data', 'after_data', 'decided_at'))
     return Response(result)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def cash_sales(request, operation_uuid):
+    member = reviewer(request)
+    cash = get_object_or_404(EncaissementTerrain, exploitation_id=member.exploitation_id,
+        submission__client_operation_id=operation_uuid)
+    rows = Vente.objects.filter(lot__exploitation_id=member.exploitation_id, client_id=cash.client_id).select_related(
+        'detail_oeufs').annotate(allocated=Sum('lettrages__montant',filter=Q(lettrages__voided_at__isnull=True))).order_by('-date', '-pk')
+    pagination = PageNumberPagination()
+    pagination.page_size = 50
+    page = pagination.paginate_queryset(rows, request)
+    data = []
+    for row in page:
+        eggs = getattr(row, 'detail_oeufs', None)
+        data.append({'reference_id':eggs.pk if eggs else row.pk,
+            'entity_type':'VENTE_OEUFS' if eggs else 'VENTE_ANIMAUX',
+            'date':row.date.isoformat(), 'montant_total':format(row.montant_total,'.2f'),
+            'reste_a_payer':format(row.montant_total-(row.allocated or 0),'.2f')})
+    return pagination.get_paginated_response(data)

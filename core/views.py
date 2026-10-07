@@ -1019,6 +1019,15 @@ def api_stock_detail(request):
     )
 
     data = {k: v or 0 for k, v in data.items()}
+    from .models import TerrainStockAdjustment
+    corrections = TerrainStockAdjustment.objects.filter(lot_id=lot_id,kind='ANIMAL',
+        exploitation=request.user.exploitation)
+    data['stock_restant'] += corrections.aggregate(total=Sum('signed_quantity'))['total'] or 0
+    categories = {'VENTE_ANIMAUX':'vendu','MORTALITE':'mortalite','DON':'don','VOL':'vol'}
+    for correction in corrections.values('submission__entity_type').annotate(total=Sum('signed_quantity')):
+        category = categories.get(correction['submission__entity_type'])
+        if category:
+            data[category] -= correction['total']
     data["perdu"] = data["mortalite"] + data["vol"] + data["don"]
 
     return Response(data)

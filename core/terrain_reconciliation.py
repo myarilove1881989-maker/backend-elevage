@@ -30,7 +30,7 @@ class AllocationInput(StrictInput):
 class DecisionInput(StrictInput):
     decision_uuid = serializers.UUIDField()
     expected_decision_version = serializers.IntegerField(min_value=0)
-    action = serializers.ChoiceField(choices=['APPLY_ORIGINAL', 'CANCEL', 'CORRECTION', 'CASH_ALLOCATION'])
+    action = serializers.ChoiceField(choices=['APPLY_ORIGINAL', 'CANCEL', 'CORRECTION', 'CASH_ALLOCATION', 'REVERSE'])
     reason = serializers.CharField(min_length=3, max_length=10000, trim_whitespace=True)
     payload = serializers.JSONField(default=dict)
     expected_entity_version = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
@@ -42,7 +42,7 @@ class DecisionInput(StrictInput):
         reject_secrets(payload)
         if len(canonical(payload).encode('utf-8')) > 65536:
             raise ValidationError('PAYLOAD_TOO_LARGE')
-        if data['action'] in ('APPLY_ORIGINAL', 'CANCEL') and payload:
+        if data['action'] in ('APPLY_ORIGINAL', 'CANCEL', 'REVERSE') and payload:
             raise ValidationError('UNEXPECTED_DECISION_PAYLOAD')
         if data['action'] == 'CASH_ALLOCATION':
             payload = AllocationInput().run_validation(payload)
@@ -84,7 +84,10 @@ def apply_effective(row, outcome, farm, data):
                     raise ValidationError('PHYSICAL_CASH_ORIGIN_IMMUTABLE')
     if data['expected_entity_version']:
         effective.expected_server_version = data['expected_entity_version']
-    user = row.offline_authorization.membership.user
+    user = copy.copy(row.offline_authorization.membership.user)
+    # The original membership fixes the farm even if the user's current profile
+    # moved later. No account, membership or device is reactivated or saved.
+    user.exploitation = farm
     entity = HANDLERS[row.entity_type](effective, user)
     state = getattr(entity, '_terrain_business_status', 'CONFIRMED')
     if row.operation_type == 'CREATE' and row.entity_type != 'CLIENT' and state == 'CONFIRMED':
@@ -160,6 +163,9 @@ def decide(request, operation_uuid, data):
                     effective_payload = apply_effective(row, outcome, farm, data)
                 elif data['action'] == 'CASH_ALLOCATION':
                     effective_payload = allocate_cash(row, outcome, data)
+                elif data['action'] == 'REVERSE':
+                    from .terrain_reversal import reverse_effect
+                    effective_payload = reverse_effect(row, outcome, data)
                 elif data['action'] == 'CANCEL':
                     if outcome.applied_at is not None or outcome.business_status == 'CONFIRMED':
                         raise ValidationError('APPLIED_OPERATION_REQUIRES_REVERSAL')

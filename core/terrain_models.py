@@ -119,6 +119,32 @@ class TerrainDecision(models.Model):
         raise ValidationError('Terrain decisions are immutable.')
 
 
+class TerrainStockAdjustment(AuditedModel):
+    """Append-only compensation, dated separately from the original stock fact."""
+    exploitation = models.ForeignKey('core.Exploitation', on_delete=models.PROTECT)
+    submission = models.ForeignKey(TerrainSubmission, on_delete=models.PROTECT)
+    decision_uuid = models.UUIDField()
+    lot = models.ForeignKey('core.Lot', on_delete=models.PROTECT)
+    kind = models.CharField(max_length=8, choices=[('ANIMAL', 'Animal'), ('EGG', 'Egg')])
+    signed_quantity = models.BigIntegerField()
+    occurred_at = models.DateTimeField(default=timezone.now)
+    collection = models.ForeignKey('core.CollecteOeufs', on_delete=models.PROTECT, null=True)
+    objects = AppendOnlyQuerySet.as_manager()
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=~models.Q(signed_quantity=0), name='terrain_adjustment_nonzero')]
+        indexes = [models.Index(fields=['exploitation', 'lot', 'kind'], name='terrain_adjustment_lot_idx')]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError('Stock compensations are immutable.')
+        kwargs['force_insert'] = True
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Stock compensations are immutable.')
+
+
 class EncaissementTerrain(AuditedModel):
     """Recognized cash receipt; allocation never rewrites the physical amount."""
     exploitation = models.ForeignKey('core.Exploitation', on_delete=models.PROTECT)

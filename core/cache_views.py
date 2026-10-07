@@ -6,7 +6,7 @@ from django.db import transaction
 from rest_framework import serializers
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .models import Lot, Client, Espece, Task, Exploitation, CategorieDepense, MouvementOeufs, Vente
+from .models import Lot, Client, Espece, Task, Exploitation, CategorieDepense, MouvementOeufs, Vente, TerrainStockAdjustment
 from .permissions import require_member
 from .serializers import LotSerializer, ClientSerializer
 from .task_views import AgendaSerializer
@@ -26,9 +26,14 @@ class CacheLotSerializer(LotSerializer):
 def lot_stock_queryset(farm_id):
     eggs = MouvementOeufs.objects.filter(lot_id=OuterRef('pk'), exploitation_id=farm_id).values('lot_id').annotate(
         total=Sum('quantite_signee')).values('total')[:1]
+    def compensation(kind):
+        return TerrainStockAdjustment.objects.filter(lot_id=OuterRef('pk'), exploitation_id=farm_id,
+            kind=kind).values('lot_id').annotate(total=Sum('signed_quantity')).values('total')[:1]
     return Lot.objects.filter(exploitation_id=farm_id).select_related('espece').annotate(
-        confirmed_stock=Coalesce(Sum('mouvements__quantite_signee'),Value(0),output_field=IntegerField()),
-        confirmed_egg_stock=Coalesce(Subquery(eggs,output_field=IntegerField()),Value(0)))
+        confirmed_stock=Coalesce(Sum('mouvements__quantite_signee'),Value(0),output_field=IntegerField())+
+            Coalesce(Subquery(compensation('ANIMAL'),output_field=IntegerField()),Value(0)),
+        confirmed_egg_stock=Coalesce(Subquery(eggs,output_field=IntegerField()),Value(0))+
+            Coalesce(Subquery(compensation('EGG'),output_field=IntegerField()),Value(0)))
 
 
 @api_view(['GET'])
@@ -43,7 +48,7 @@ def cache_page(request):
     tenant = 'lot__exploitation_id' if collection == 'sales' else 'exploitation_id'
     queryset = models[collection].objects.filter(**{tenant:member.exploitation_id}, pk__gt=after)
     if collection == 'sales':
-        queryset = queryset.select_related('detail_oeufs').annotate(allocated=Sum('lettrages__montant'))
+        queryset = queryset.select_related('detail_oeufs').annotate(allocated=Sum('lettrages__montant',filter=Q(lettrages__voided_at__isnull=True)))
     if collection == 'tasks' and member.role == 'OPERATEUR':
         queryset = queryset.filter(Q(assigned_to_id=request.user.pk) | Q(assigned_to__isnull=True))
     if collection == 'lots':

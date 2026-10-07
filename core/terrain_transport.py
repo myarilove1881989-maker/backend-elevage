@@ -136,12 +136,16 @@ def verify_transport(request, purpose):
 
 def receipt(row):
     result = row.outcome
+    decision = row.decisions.order_by('-decided_at', '-pk').first()
     from .cache_views import stock_snapshots
     data = {'client_operation_id':str(row.client_operation_id), 'transport_status':'SERVER_RECEIVED',
         'business_status':result.business_status, 'reason_code':result.reason_code,
         'reason_text':result.reason_text, 'author_user_id':row.author_user_id,
         'received_at':row.received_at.isoformat(), 'server_entity_type':result.server_entity_type,
         'server_entity_id':result.server_entity_id, 'server_version':result.server_version,
+        'decision_version':result.decision_version,
+        'decision_action':decision.action if decision else '',
+        'decision_actor_id':decision.decision_actor_id if decision else None,
         'applied_at':result.applied_at.isoformat() if result.applied_at else None,
         'stock_snapshots':stock_snapshots(row.exploitation_id,result.affected_lot_ids),
         'entity_mappings':[{'entity_type':mapping.entity_type,

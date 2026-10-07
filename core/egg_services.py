@@ -13,6 +13,7 @@ from .models import (
     MouvementOeufs,
     Vente,
     VenteOeufs,
+    TerrainStockAdjustment,
 )
 
 
@@ -25,7 +26,8 @@ def get_live_birds(lot):
         lot=lot,
         type_mouvement__in=["VENTE", "MORTALITE", "DON", "VOL"],
     ).aggregate(total=Sum("quantite"))["total"] or 0
-    return max(total_achats + total_naissances - total_sorties, 0)
+    adjustment = TerrainStockAdjustment.objects.filter(lot=lot,kind='ANIMAL').aggregate(total=Sum('signed_quantity'))['total'] or 0
+    return max(total_achats + total_naissances - total_sorties + adjustment, 0)
 
 
 def get_hen_days(lot, start, end):
@@ -41,6 +43,10 @@ def get_hen_days(lot, start, end):
         lot=lot, date__lte=end, type_mouvement__in=['VENTE', 'MORTALITE', 'DON', 'VOL']
     ).values('date').annotate(n=Sum('quantite')):
         events[row['date']] = events.get(row['date'], 0) - row['n']
+    from django.db.models.functions import TruncDate
+    for row in TerrainStockAdjustment.objects.filter(lot=lot,kind='ANIMAL',occurred_at__date__lte=end).annotate(
+            day=TruncDate('occurred_at')).values('day').annotate(n=Sum('signed_quantity')):
+        events[row['day']] = events.get(row['day'],0) + row['n']
     birds = sum(n for day, n in events.items() if day < start)
     cursor = start
     total = 0
@@ -55,7 +61,11 @@ def get_egg_stock(exploitation, lot=None):
     mouvements = MouvementOeufs.objects.filter(exploitation=exploitation)
     if lot is not None:
         mouvements = mouvements.filter(lot=lot)
-    return mouvements.aggregate(total=Sum("quantite_signee"))["total"] or 0
+    adjustments = TerrainStockAdjustment.objects.filter(exploitation=exploitation,kind='EGG')
+    if lot is not None:
+        adjustments = adjustments.filter(lot=lot)
+    return (mouvements.aggregate(total=Sum("quantite_signee"))["total"] or 0) + (
+        adjustments.aggregate(total=Sum('signed_quantity'))['total'] or 0)
 
 
 def get_dated_egg_stock(exploitation, lot):
@@ -77,6 +87,11 @@ def get_dated_egg_stock(exploitation, lot):
         ).values("collecte_id").annotate(total=Sum("quantite"))
         .values_list("collecte_id", "total")
     )
+    restorations = {}
+    for credit in TerrainStockAdjustment.objects.filter(exploitation=exploitation,lot=lot,kind='EGG',
+            collection__isnull=False,signed_quantity__gt=0).values('collection_id','signed_quantity','occurred_at'):
+        restorations.setdefault(credit['collection_id'],[]).append({
+            'quantity':credit['signed_quantity'],'occurred_at':credit['occurred_at']})
     production_by_collection = {
         source_id: (amount, movement_type)
         for source_id, amount, movement_type in MouvementOeufs.objects.filter(
@@ -100,7 +115,11 @@ def get_dated_egg_stock(exploitation, lot):
             item["nombre_casses"] + item["nombre_declasses"]
             + item["nombre_consommes_donnes"]
         )
-        attributed = allocated_by_collection.get(item["id"], 0)
+        gross_attributed = allocated_by_collection.get(item["id"], 0)
+        credits = restorations.get(item['id'],[])
+        attributed = gross_attributed - sum(credit['quantity'] for credit in credits)
+        item['historical_base_remaining'] = commercialisable - gross_attributed
+        item['restorations'] = credits
         item["nombre_commercialisable"] = commercialisable
         item["sorties_affectees"] = attributed
         candidate_total += commercialisable - attributed
@@ -145,6 +164,9 @@ def plan_fifo_egg_sale(*, stock_state, quantity, sale_date, movement_at):
         stock_state["collectes"], key=lambda item: (item["collecte_at"], item["id"]),
     ):
         available = collection["restant"]
+        if collection.get('restorations'):
+            available = collection['historical_base_remaining'] + sum(credit['quantity'] for credit in collection['restorations']
+                if credit['occurred_at']<=movement_at and timezone.localdate(credit['occurred_at'])<=sale_date)
         if available <= 0:
             continue
         # Vente.date n'a pas d'heure : toutes les collectes du jour sont
@@ -197,6 +219,9 @@ def affect_egg_exit(mouvement, allocations):
         .values("collecte_id").annotate(total=Sum("quantite"))
         .values_list("collecte_id", "total")
     )
+    restored = dict(TerrainStockAdjustment.objects.filter(collection_id__in=ids,kind='EGG',
+        signed_quantity__gt=0,occurred_at__lte=mouvement.date).values('collection_id').annotate(
+        total=Sum('signed_quantity')).values_list('collection_id','total'))
     for item in allocations:
         source = sources[item["collecte"]]
         if item["quantite"] <= 0:
@@ -206,7 +231,7 @@ def affect_egg_exit(mouvement, allocations):
             timezone.localdate(source.collecte_at) > mouvement.vente_oeufs.vente.date
         ):
             raise ValidationError({"affectations": "La collecte doit précéder la sortie et sa vente."})
-        if previous.get(source.pk, 0) + item["quantite"] > source.nombre_commercialisable:
+        if previous.get(source.pk, 0) - restored.get(source.pk,0) + item["quantite"] > source.nombre_commercialisable:
             raise ValidationError({"affectations": "Quantité insuffisante dans la collecte indiquée."})
     return AffectationMouvementOeufs.objects.bulk_create([
         AffectationMouvementOeufs(

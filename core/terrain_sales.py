@@ -28,6 +28,8 @@ def animal_sale(row, user):
     data = serializer.validated_data
     day = timezone.localdate(row.business_occurred_at)
     historical = lot.mouvements.filter(date__lte=day).aggregate(n=Sum('quantite_signee'))['n'] or 0
+    from .models import TerrainStockAdjustment
+    historical += TerrainStockAdjustment.objects.filter(lot=lot, kind='ANIMAL', occurred_at__date__lte=day).aggregate(n=Sum('signed_quantity'))['n'] or 0
     if data['quantite'] > min(stock(lot), historical):
         raise BusinessConflict('STOCK_INSUFFICIENT')
     if data['quantite'] * data['prix_unitaire'] > Decimal('9999999999.99'):

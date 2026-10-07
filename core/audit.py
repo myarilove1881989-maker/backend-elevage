@@ -106,8 +106,6 @@ class AuditedQuerySet(models.QuerySet):
             return result
 
     def delete(self):
-        if _scope.get() is None:
-            return super().delete()
         return delete_with_audit(self)
 
 
@@ -124,6 +122,18 @@ def delete_with_audit(objects):
         for obj in qs:
             if isinstance(obj, AuditedModel):
                 victims[(type(obj), obj.pk)] = obj
+    # A normal delete must never erase the facts of an offline declaration or
+    # their later compensation, including victims reached through a cascade.
+    from .models import AuditEvent
+    traced = models.Q(pk__in=[])
+    for obj in victims.values():
+        traced |= models.Q(entity_type=obj._meta.label_lower, entity_id=str(obj.pk))
+        if getattr(obj, 'voided_at', None) is not None:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError('TERRAIN_HISTORY_REQUIRES_REASONED_DECISION')
+    if victims and AuditEvent.objects.filter(traced, operation_id__isnull=False).exists():
+        from rest_framework.exceptions import ValidationError
+        raise ValidationError('TERRAIN_HISTORY_REQUIRES_REASONED_DECISION')
     with transaction.atomic():
         for obj in victims.values():
             record(obj, "DELETE", snapshot(obj), {})
@@ -161,8 +171,26 @@ class AuditedModel(models.Model):
                 record(self, "UPDATE" if before else "CREATE", before, after)
 
     def delete(self, *args, **kwargs):
-        if _scope.get() is None:
-            return super().delete(*args, **kwargs)
-        result = delete_with_audit(type(self).objects.filter(pk=self.pk))
+        result = delete_with_audit(type(self)._base_manager.filter(pk=self.pk))
         self.pk = None
         return result
+
+
+class ActiveBusinessManager(models.Manager.from_queryset(AuditedQuerySet)):
+    def get_queryset(self):
+        return super().get_queryset().filter(voided_at__isnull=True)
+
+
+class ReversibleAuditedModel(AuditedModel):
+    """Operational lists exclude voided facts; unfiltered history remains intact."""
+    voided_at = models.DateTimeField(null=True, editable=False)
+    void_decision_uuid = models.UUIDField(null=True, editable=False)
+    objects = ActiveBusinessManager()
+    history = AuditedQuerySet.as_manager()
+
+    class Meta:
+        abstract = True
+        constraints = [models.CheckConstraint(
+            condition=(models.Q(voided_at__isnull=True, void_decision_uuid__isnull=True) |
+                models.Q(voided_at__isnull=False, void_decision_uuid__isnull=False)),
+            name='%(app_label)s_%(class)s_void_consistent')]

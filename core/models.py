@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from django.utils.timezone import now
 from django.db.models import Sum
 import uuid
-from .audit import AuditedModel, AuditedQuerySet
+from .audit import AuditedModel, AuditedQuerySet, ReversibleAuditedModel, ActiveBusinessManager
 
 
 # ===============================
@@ -151,7 +151,9 @@ class Lot(AuditedModel):
         result = self.mouvements.aggregate(
             total=Sum('quantite_signee')
         )
-        return result['total'] or 0
+        from .terrain_models import TerrainStockAdjustment
+        adjustment = TerrainStockAdjustment.objects.filter(lot=self, kind='ANIMAL').aggregate(total=Sum('signed_quantity'))['total'] or 0
+        return (result['total'] or 0) + adjustment
 
 
 # ===============================
@@ -217,10 +219,10 @@ class Mouvement(AuditedModel):
 # VENTE
 # ===============================
 
-class Vente(AuditedModel):
+class Vente(ReversibleAuditedModel):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
 
-    objects = TenantQuerySet.as_manager()
+    objects = ActiveBusinessManager.from_queryset(TenantQuerySet)()
 
     lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name='ventes')
     client = models.ForeignKey("Client", on_delete=models.SET_NULL, null=True, blank=True, related_name="ventes")
@@ -388,7 +390,7 @@ class Payment(AuditedModel):
 # LETTRAGE
 # ===============================
 
-class Lettrage(AuditedModel):
+class Lettrage(ReversibleAuditedModel):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     vente = models.ForeignKey("Vente", on_delete=models.CASCADE, related_name="lettrages")
     payment = models.ForeignKey("Payment", on_delete=models.CASCADE, related_name="lettrages")
@@ -584,7 +586,7 @@ class AffectationMouvementOeufs(AuditedModel):
                 raise ValidationError("Seule une sortie du stock peut être affectée à une collecte.")
 
 
-class VenteOeufs(AuditedModel):
+class VenteOeufs(ReversibleAuditedModel):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     CONDITIONNEMENT_CHOICES = [
         ('UNITE', 'Unité'),
@@ -794,4 +796,4 @@ from .foundation_models import (  # noqa: E402 - string relations resolve after 
     ExploitationMembership, DeviceRegistration, DeviceChallenge,
     OfflineAuthorization, AuditEvent,
 )
-from .terrain_models import DeviceTransportChallenge, TerrainSubmission, TerrainOutcome, TerrainEntityMapping, EncaissementTerrain, TerrainDecision  # noqa: E402
+from .terrain_models import DeviceTransportChallenge, TerrainSubmission, TerrainOutcome, TerrainEntityMapping, EncaissementTerrain, TerrainDecision, TerrainStockAdjustment  # noqa: E402
