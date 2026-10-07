@@ -1,5 +1,6 @@
-from datetime import date
+from datetime import datetime, timezone as datetime_timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.utils import timezone
@@ -10,6 +11,17 @@ from core.models import User, Espece, Client, Lot, CategorieDepense, Depense
 
 class EggJourneyTests(TestCase):
     def test_purchase_collection_sale_payment_statistics_and_tenant_isolation(self):
+        self.run_journey()
+
+    def test_default_statistics_keep_local_day_after_midnight_before_utc_midnight(self):
+        instant=datetime(2026,10,7,22,30,tzinfo=datetime_timezone.utc)
+        with timezone.override('Europe/Paris'), patch('django.utils.timezone.now',return_value=instant), \
+                patch('core.views.now',return_value=instant):
+            # Same real purchase/collection/sale/cash journey; still expects the
+            # 5,000 margin without explicit dates, despite the UTC previous day.
+            self.run_journey()
+
+    def run_journey(self):
         user = User.objects.create_user(username='journey')
         other = User.objects.create_user(username='other-journey')
         api = APIClient()
