@@ -232,3 +232,21 @@ métier natif avec serveur réel et durcissement 2I reste requis avant V1.
 Phase 2F validée ; corrections, conflits et supervision démarrent ensuite
 en 2G. PR backend #9 et mobile #11 restent en brouillon. Aucun merge,
 déploiement, test de production ou activation de politique réelle.
+
+## Phase 2G — premier bloc EN COURS
+
+Décisions immuables séparées des déclarations originales : application
+explicitement décidée, annulation non appliquée, correction d’une déclaration
+non appliquée et affectation explicite d’un reliquat reconnu. Motif obligatoire,
+UUID idempotent, version de décision, verrou exploitation puis outcome,
+auteur original et décideur distincts, corrélation et audit avant/après.
+Propriétaire supervise ; opérateur délégué nécessite droit explicite et preuve
+de tablette principale active. Une désactivation n’est jamais annulée implicitement.
+Migration additive 0025 (décisions/version) et 0026 (trigger PG append-only).
+Filtres activité par auteur, décideur, opération, corrélation, source et dates.
+La supervision ne présente que les déclarations déjà reçues par le serveur.
+
+Première exécution ciblée : six erreurs de référence à un champ exploitation
+au lieu de l’identifiant numérique AuditEvent, corrigées sans modifier l’original.
+15 contrôles ciblés SQLite attendus avant les régressions complètes. Réversion
+des opérations appliquées et interfaces restent à construire ; phase 2G non validée.

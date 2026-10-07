@@ -303,6 +303,21 @@ class AuditSerializer(serializers.ModelSerializer):
         read_only_fields = [f.name for f in AuditEvent._meta.fields]
 
 
+class AuditFilters(serializers.Serializer):
+    actor_user_id = serializers.IntegerField(min_value=1, required=False)
+    decision_actor_id = serializers.IntegerField(min_value=1, required=False)
+    operation_id = serializers.UUIDField(required=False)
+    correlation_id = serializers.UUIDField(required=False)
+    source = serializers.ChoiceField(choices=['ONLINE', 'OFFLINE', 'RECONCILE'], required=False)
+    since = serializers.DateTimeField(required=False)
+    until = serializers.DateTimeField(required=False)
+
+    def validate(self, data):
+        if 'since' in data and 'until' in data and data['since'] > data['until']:
+            raise ValidationError('INVALID_AUDIT_DATE_RANGE')
+        return data
+
+
 @api_view(['GET'])
 def audit_events(request):
     owner = require_owner(request.user)
@@ -310,6 +325,14 @@ def audit_events(request):
     pagination = PageNumberPagination()
     pagination.page_size = 100
     qs = AuditEvent.objects.filter(exploitation_id=owner.exploitation_id)
+    filters = AuditFilters(data=request.query_params)
+    filters.is_valid(raise_exception=True)
+    values = dict(filters.validated_data)
+    if 'since' in values:
+        qs = qs.filter(received_at__gte=values.pop('since'))
+    if 'until' in values:
+        qs = qs.filter(received_at__lte=values.pop('until'))
+    qs = qs.filter(**values)
     for name in ('entity_type', 'entity_id', 'action', 'category'):
         if request.query_params.get(name):
             qs = qs.filter(**{name: request.query_params[name]})

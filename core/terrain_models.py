@@ -72,6 +72,7 @@ class TerrainOutcome(AuditedModel):
     applied_at = models.DateTimeField(null=True)
     affected_lot_ids = models.JSONField(default=list)
     updated_at = models.DateTimeField(auto_now=True)
+    decision_version = models.PositiveIntegerField(default=0)
 
     class Meta:
         constraints = [models.CheckConstraint(condition=models.Q(business_status__in=BUSINESS_STATES), name='terrain_business_status_valid')]
@@ -87,6 +88,35 @@ class TerrainEntityMapping(AuditedModel):
     class Meta:
         constraints = [models.UniqueConstraint(fields=['exploitation', 'entity_type', 'local_entity_id'],
             name='terrain_farm_entity_mapping_unique')]
+
+
+class TerrainDecision(models.Model):
+    """Immutable reasoned decision, separate from the original physical declaration."""
+    exploitation = models.ForeignKey('core.Exploitation', on_delete=models.PROTECT)
+    submission = models.ForeignKey(TerrainSubmission, on_delete=models.PROTECT, related_name='decisions')
+    decision_uuid = models.UUIDField()
+    decision_actor_id = models.PositiveBigIntegerField()
+    action = models.CharField(max_length=24)
+    reason = models.TextField()
+    effective_payload = models.JSONField(default=dict)
+    request_digest = models.CharField(max_length=64)
+    before_data = models.JSONField(default=dict)
+    after_data = models.JSONField(default=dict)
+    decided_at = models.DateTimeField(default=timezone.now)
+    objects = AppendOnlyQuerySet.as_manager()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['exploitation', 'decision_uuid'],
+            name='terrain_farm_decision_unique')]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError('Terrain decisions are immutable.')
+        kwargs['force_insert'] = True
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Terrain decisions are immutable.')
 
 
 class EncaissementTerrain(AuditedModel):

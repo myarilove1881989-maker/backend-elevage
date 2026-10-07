@@ -794,4 +794,4 @@ from .foundation_models import (  # noqa: E402 - string relations resolve after 
     ExploitationMembership, DeviceRegistration, DeviceChallenge,
     OfflineAuthorization, AuditEvent,
 )
-from .terrain_models import DeviceTransportChallenge, TerrainSubmission, TerrainOutcome, TerrainEntityMapping, EncaissementTerrain  # noqa: E402
+from .terrain_models import DeviceTransportChallenge, TerrainSubmission, TerrainOutcome, TerrainEntityMapping, EncaissementTerrain, TerrainDecision  # noqa: E402
