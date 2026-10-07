@@ -27,7 +27,7 @@ from django.db.models.functions import Coalesce
 # Django utils
 from django.utils.timezone import now
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.utils.dateparse import parse_date
 
 from .models import (
@@ -670,7 +670,7 @@ def get_client_balance(client):
         total=Sum('montant')
     )['total'] or 0
 
-    return float(total_ventes) - float(total_payments)
+    return total_ventes - total_payments
 
 
 # ===============================
@@ -678,7 +678,7 @@ def get_client_balance(client):
 # ===============================
 def auto_lettrage(client, payment):
 
-    restant = float(payment.montant)
+    restant = Decimal(str(payment.montant))
 
     ventes = client.ventes.order_by("date")
 
@@ -688,7 +688,7 @@ def auto_lettrage(client, payment):
             total=Sum('montant')
         )['total'] or 0
 
-        reste_vente = float(vente.montant_total) - float(total_lettre)
+        reste_vente = vente.montant_total - total_lettre
 
         if reste_vente <= 0:
             continue
@@ -771,8 +771,11 @@ def api_create_payment(request):
     # ===============================
 
     try:
-        montant = float(montant)
-    except (TypeError, ValueError):
+        montant = Decimal(str(montant))
+        if (not montant.is_finite() or montant > Decimal('9999999999.99') or
+                montant != montant.quantize(Decimal('0.01'))):
+            raise ValueError('Invalid monetary precision')
+    except (TypeError, ValueError, InvalidOperation):
         return Response(
             {"error": "Montant invalide"},
             status=400
@@ -810,8 +813,8 @@ def api_create_payment(request):
         )['total'] or 0
 
         reste_vente = (
-            float(vente.montant_total)
-            - float(total_lettrage)
+            vente.montant_total
+            - total_lettrage
         )
 
         # ===============================
@@ -921,12 +924,12 @@ def api_client_ventes(request, client_id):
             total=Sum('montant')
         )['total'] or 0
 
-        reste = float(v.montant_total) - float(total_lettre)
+        reste = v.montant_total - total_lettre
 
         # 🔥 STATUT
         if reste == 0:
             statut = "PAYE"
-        elif reste < float(v.montant_total):
+        elif reste < v.montant_total:
             statut = "PARTIEL"
         else:
             statut = "IMPAYE"

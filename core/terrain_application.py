@@ -125,16 +125,18 @@ def process_pending(device_id):
                 # Business failure rolls back only this application savepoint.
                 with transaction.atomic(), audit_scope(context_for(row)):
                     entity = HANDLERS[row.entity_type](row, member.user)
-                    if row.operation_type == 'CREATE' and row.entity_type != 'CLIENT':
+                    if (row.operation_type == 'CREATE' and row.entity_type != 'CLIENT' and
+                            getattr(entity, '_terrain_business_status', 'CONFIRMED') == 'CONFIRMED'):
                         from .terrain_operations import map_entity
                         map_entity(row, row.entity_type, entity)
                     farm.business_revision += 1
                     farm.save(update_fields=['business_revision'])
-                    result.business_status = 'CONFIRMED'
-                    result.reason_code = result.reason_text = ''
+                    result.business_status = getattr(entity, '_terrain_business_status', 'CONFIRMED')
+                    result.reason_code = getattr(entity, '_terrain_reason_code', '')
+                    result.reason_text = ''
                     result.server_entity_type = row.entity_type
                     result.server_entity_id = str(entity.pk)
-                    result.server_version = str(getattr(entity, 'version', ''))
+                    result.server_version = str(getattr(entity, 'version', f'farm:{farm.business_revision}'))
                     result.affected_lot_ids = getattr(entity, '_terrain_lot_ids', [])
                     if result.affected_lot_ids:
                         result.server_version = f'farm:{farm.business_revision}'
@@ -145,7 +147,7 @@ def process_pending(device_id):
                         action='TERRAIN_APPLIED', entity_type=entity._meta.label_lower, entity_id=str(entity.pk),
                         operation_id=row.client_operation_id, local_entity_id=row.local_entity_id,
                         business_occurred_at=row.business_occurred_at, applied_at=result.applied_at,
-                        after_data={'business_status':'CONFIRMED'})
+                        after_data={'business_status':result.business_status, 'reason_code':result.reason_code})
                 progress = True
             except BusinessConflict as error:
                 code = error.code
@@ -176,3 +178,5 @@ def current_receipts(device_id, operation_ids):
 
 from .terrain_operations import HANDLERS as OPERATION_HANDLERS  # noqa: E402
 HANDLERS.update(OPERATION_HANDLERS)
+from .terrain_sales import HANDLERS as SALES_HANDLERS  # noqa: E402
+HANDLERS.update(SALES_HANDLERS)

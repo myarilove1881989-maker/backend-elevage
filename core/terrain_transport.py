@@ -137,7 +137,7 @@ def verify_transport(request, purpose):
 def receipt(row):
     result = row.outcome
     from .cache_views import stock_snapshots
-    return {'client_operation_id':str(row.client_operation_id), 'transport_status':'SERVER_RECEIVED',
+    data = {'client_operation_id':str(row.client_operation_id), 'transport_status':'SERVER_RECEIVED',
         'business_status':result.business_status, 'reason_code':result.reason_code,
         'reason_text':result.reason_text, 'author_user_id':row.author_user_id,
         'received_at':row.received_at.isoformat(), 'server_entity_type':result.server_entity_type,
@@ -147,6 +147,14 @@ def receipt(row):
         'entity_mappings':[{'entity_type':mapping.entity_type,
             'local_entity_id':str(mapping.local_entity_id),'server_entity_id':mapping.server_entity_id}
             for mapping in TerrainEntityMapping.objects.filter(submission=row)]}
+    if row.entity_type == 'ENCAISSEMENT':
+        from .models import EncaissementTerrain
+        cash = EncaissementTerrain.objects.filter(submission=row).first()
+        if cash:
+            data['cash_recognition'] = {'montant_recu':str(cash.montant_recu),
+                'montant_affecte':str(cash.montant_affecte),'montant_a_rapprocher':str(cash.montant_a_rapprocher),
+                'payment_id':cash.payment_id,'mode':cash.mode}
+    return data
 
 
 @transaction.atomic

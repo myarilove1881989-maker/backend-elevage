@@ -279,7 +279,7 @@ def delete_collection(collection):
 
 
 @transaction.atomic
-def create_egg_sale(*, validated_data, user):
+def create_egg_sale(*, validated_data, user, business_occurred_at=None):
     requested_lot = validated_data.pop("lot")
     allocations = validated_data.pop("affectations", None)
     lot = Lot.objects.select_for_update().get(
@@ -298,7 +298,7 @@ def create_egg_sale(*, validated_data, user):
     prix_conditionnement = validated_data["prix_unitaire_conditionnement"]
     montant_total = nombre_conditionnements * prix_conditionnement
     sale_date = vente_data.get("date", None) or timezone.now().date()
-    movement_at = timezone.now()
+    movement_at = business_occurred_at or timezone.now()
 
     # Toutes les écritures de stock par API verrouillent ce lot. La lecture
     # des restants et la vente appartiennent à la même transaction.
@@ -320,12 +320,14 @@ def create_egg_sale(*, validated_data, user):
     vente = Vente.objects.create(
         lot=lot,
         client=client,
+        created_by=user,
         date=sale_date,
         quantite=nombre_conditionnements,
         prix_unitaire=prix_conditionnement,
     )
     vente_oeufs = VenteOeufs.objects.create(
         vente=vente,
+        created_by=user,
         exploitation=user.exploitation,
         lot=lot,
         nombre_oeufs=nombre_oeufs,

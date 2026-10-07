@@ -41,7 +41,7 @@ def resolve(row, reference, kind='LOT', model=Lot):
     else:
         pk = reference['server_id']
     try:
-        tenant_field = 'lot__exploitation_id' if model is Depense else 'exploitation_id'
+        tenant_field = 'lot__exploitation_id' if model._meta.model_name in ('depense','vente') else 'exploitation_id'
         return model.objects.select_for_update().get(pk=pk, **{tenant_field:row.exploitation_id})
     except model.DoesNotExist:
         raise BusinessConflict('REFERENCE_OUTSIDE_FARM')

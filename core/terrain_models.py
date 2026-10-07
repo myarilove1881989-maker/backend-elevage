@@ -87,3 +87,25 @@ class TerrainEntityMapping(AuditedModel):
     class Meta:
         constraints = [models.UniqueConstraint(fields=['exploitation', 'entity_type', 'local_entity_id'],
             name='terrain_farm_entity_mapping_unique')]
+
+
+class EncaissementTerrain(AuditedModel):
+    """Recognized cash receipt; allocation never rewrites the physical amount."""
+    exploitation = models.ForeignKey('core.Exploitation', on_delete=models.PROTECT)
+    submission = models.OneToOneField(TerrainSubmission, on_delete=models.PROTECT)
+    client = models.ForeignKey('core.Client', on_delete=models.PROTECT)
+    created_by = models.ForeignKey('core.User', on_delete=models.PROTECT)
+    payment = models.OneToOneField('core.Payment', on_delete=models.PROTECT)
+    business_occurred_at = models.DateTimeField()
+    montant_recu = models.DecimalField(max_digits=12, decimal_places=2)
+    montant_affecte = models.DecimalField(max_digits=12, decimal_places=2)
+    montant_a_rapprocher = models.DecimalField(max_digits=12, decimal_places=2)
+    mode = models.CharField(max_length=20, choices=[(s,s) for s in ('ESPECES','MOBILE_MONEY','VIREMENT','CHEQUE')])
+    note = models.TextField(blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=models.Q(montant_recu__gt=0), name='terrain_cash_positive'),
+            models.CheckConstraint(condition=models.Q(montant_affecte__gte=0, montant_a_rapprocher__gte=0), name='terrain_cash_parts_positive'),
+            models.CheckConstraint(condition=models.Q(montant_recu=models.F('montant_affecte')+models.F('montant_a_rapprocher')), name='terrain_cash_parts_equal_received'),
+        ]

@@ -133,3 +133,36 @@ réel, redémarrage complet et mise à jour APK reste à valider en 2I.
 Phase 2E validée ; ventes, FIFO et encaissements commencent ensuite en 2F.
 PR backend #8 et mobile #10 restent en brouillon. Aucun merge, déploiement,
 test de production ni activation de politique réelle.
+
+## Phase 2F — ventes et encaissements, checkpoint EN COURS
+
+Ventes animaux sous verrou de lot/exploitation, survente conservée à
+rapprocher sans stock confirmé négatif. Ventes d'œufs via le service existant,
+FIFO et AffectationMouvementOeufs avec la date/heure métier comme borne :
+une collecte postérieure, même du même jour, est inéligible.
+
+EncaissementTerrain distingue le montant physiquement reçu, le montant
+lettré et le reliquat à rapprocher. Payment garde tout le montant reconnu ;
+seule la vente explicitement visée est lettrée, sans allocation silencieuse
+à d'autres dettes. 50 000 reçus pour 30 000 dus conserve 50 000, affecte
+30 000 et signale 20 000. Auteur, date métier et déclaration restent tracés.
+Migration 0023 : modèle reconnu et conversion Payment/Lettrage en Decimal,
+précédée d'un contrôle refusant arrondi réel, dépassement ou montant non
+fini. Cette évolution des anciens champs est nécessaire au lettrage exact ;
+elle reste soumise à sauvegarde et contrôle des valeurs réelles avant toute
+migration de production. Test de migration historique valide et refusée.
+
+Mobile : schéma local 5 additif, ventes/projections et chaîne UUID
+client → vente → encaissement. Reçus monétaires contrôlés et persistés,
+montants en chaînes décimales/BigInt, affectation distincte du fait physique.
+Formulaires et parcours natif supplémentaires en attente de CI.
+
+Premières suites complètes : 229 tests sur chaque moteur, deux erreurs
+identiques dans l'export Excel mélangeant Decimal et float ; calculs corrigés.
+Les tests de concurrence PostgreSQL passent, dont deux ventes concurrentes
+et deux encaissements sur une dette unique. Un premier appel SQLite depuis
+le mauvais répertoire n'avait découvert aucun test : résultat non retenu,
+relancé depuis le dépôt. Test de cache ajouté : erreur de chemin de fixture
+corrigée, puis format de dette harmonisé à deux décimales. 21 tests ciblés
+ventes/exports passent avec deux skips PG. Suites complètes corrigées et CI
+mobile restent requises avant clôture 2F. Aucune production touchée.

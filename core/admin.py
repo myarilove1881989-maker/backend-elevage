@@ -348,7 +348,7 @@ class PaymentAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
 
     @admin.display(description="Non affecté (FCFA)")
     def non_affecte(self, obj):
-        return float(obj.montant) - float(self.montant_lettre(obj))
+        return obj.montant - self.montant_lettre(obj)
 
 
 @admin.register(Lettrage)

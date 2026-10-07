@@ -242,7 +242,7 @@ class Vente(AuditedModel):
 
     @property
     def reste_a_payer(self):
-        return float(self.montant_total) - float(self.montant_paye)
+        return self.montant_total - self.montant_paye
 
     @property
     def statut(self):
@@ -372,7 +372,7 @@ class Client(AuditedModel):
 class Payment(AuditedModel):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="payments")
-    montant = models.FloatField()
+    montant = models.DecimalField(max_digits=12, decimal_places=2)
     date = models.DateField()
     note = models.TextField(blank=True, null=True)
 
@@ -393,7 +393,7 @@ class Lettrage(AuditedModel):
     vente = models.ForeignKey("Vente", on_delete=models.CASCADE, related_name="lettrages")
     payment = models.ForeignKey("Payment", on_delete=models.CASCADE, related_name="lettrages")
 
-    montant = models.FloatField()
+    montant = models.DecimalField(max_digits=12, decimal_places=2)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -794,4 +794,4 @@ from .foundation_models import (  # noqa: E402 - string relations resolve after 
     ExploitationMembership, DeviceRegistration, DeviceChallenge,
     OfflineAuthorization, AuditEvent,
 )
-from .terrain_models import DeviceTransportChallenge, TerrainSubmission, TerrainOutcome, TerrainEntityMapping  # noqa: E402
+from .terrain_models import DeviceTransportChallenge, TerrainSubmission, TerrainOutcome, TerrainEntityMapping, EncaissementTerrain  # noqa: E402

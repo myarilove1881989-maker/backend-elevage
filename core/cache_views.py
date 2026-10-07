@@ -6,14 +6,14 @@ from django.db import transaction
 from rest_framework import serializers
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .models import Lot, Client, Espece, Task, Exploitation, CategorieDepense, MouvementOeufs
+from .models import Lot, Client, Espece, Task, Exploitation, CategorieDepense, MouvementOeufs, Vente
 from .permissions import require_member
 from .serializers import LotSerializer, ClientSerializer
 from .task_views import AgendaSerializer
 
 
 class CachePageInput(serializers.Serializer):
-    collection = serializers.ChoiceField(choices=['lots', 'clients', 'species', 'tasks', 'expense_categories'])
+    collection = serializers.ChoiceField(choices=['lots', 'clients', 'species', 'tasks', 'expense_categories', 'sales'])
     after = serializers.IntegerField(min_value=0, max_value=9223372036854775807, default=0)
     limit = serializers.IntegerField(min_value=1, max_value=200, default=50)
 
@@ -39,8 +39,11 @@ def cache_page(request):
     inputs.is_valid(raise_exception=True)
     collection, after, limit = (inputs.validated_data[key] for key in ('collection', 'after', 'limit'))
     farm = Exploitation.objects.select_for_update().get(pk=member.exploitation_id)
-    models = {'lots': Lot, 'clients': Client, 'species': Espece, 'tasks': Task, 'expense_categories':CategorieDepense}
-    queryset = models[collection].objects.filter(exploitation_id=member.exploitation_id, pk__gt=after)
+    models = {'lots': Lot, 'clients': Client, 'species': Espece, 'tasks': Task, 'expense_categories':CategorieDepense, 'sales':Vente}
+    tenant = 'lot__exploitation_id' if collection == 'sales' else 'exploitation_id'
+    queryset = models[collection].objects.filter(**{tenant:member.exploitation_id}, pk__gt=after)
+    if collection == 'sales':
+        queryset = queryset.select_related('detail_oeufs').annotate(allocated=Sum('lettrages__montant'))
     if collection == 'tasks' and member.role == 'OPERATEUR':
         queryset = queryset.filter(Q(assigned_to_id=request.user.pk) | Q(assigned_to__isnull=True))
     if collection == 'lots':
@@ -48,7 +51,16 @@ def cache_page(request):
     rows = list(queryset.order_by('pk')[:limit + 1])
     has_more = len(rows) > limit
     rows = rows[:limit]
-    if collection in ('species','expense_categories'):
+    if collection == 'sales':
+        data = []
+        for row in rows:
+            eggs = getattr(row, 'detail_oeufs', None)
+            data.append({'id':row.pk, 'entity_type':'VENTE_OEUFS' if eggs else 'VENTE_ANIMAUX',
+                'reference_id':eggs.pk if eggs else row.pk, 'client_id':row.client_id,'lot_id':row.lot_id,
+                'date':row.date.isoformat(),'quantite':eggs.nombre_oeufs if eggs else row.quantite,
+                'montant_total':format(row.montant_total,'.2f'),'reste_a_payer':format(row.montant_total-(row.allocated or 0),'.2f'),
+                'confirmed_business_revision':farm.business_revision})
+    elif collection in ('species','expense_categories'):
         data = [{'id': row.pk, 'nom': row.nom, 'exploitation': row.exploitation_id} for row in rows]
     else:
         serializer = {'lots': CacheLotSerializer, 'clients': ClientSerializer, 'tasks': AgendaSerializer}[collection]
