@@ -17,10 +17,10 @@ Référence : https://developer.android.com/reference/android/security/keystore/
 
 - 4 tests dédiés : activation P-256, replay refusé, mauvaise clé/corps
   modifié refusés, algorithmes exclus et enregistrement P-256.
-- SQLite : 177 tests, 175 réussis, 2 skips PostgreSQL attendus.
+- SQLite : 183 tests, 181 réussis, 2 skips PostgreSQL attendus.
 - PostgreSQL 17.11, cluster local de travail, host 127.0.0.1:55437,
   bases `elevage_phase2b1_local` et `elevage_phase2b1_suite` :
-  177 tests, 175 réussis, 2 skips de contrôles SQLite attendus.
+  183 tests, 181 réussis, 2 skips de contrôles SQLite attendus.
 - Migrations core 0016–0018 et token_blacklist appliquées ; check et
   makemigrations --check passent. Aucune nouvelle migration.
 - SQL direct : UPDATE/DELETE AuditEvent refusés par trigger 0018 (P0001).
@@ -33,6 +33,12 @@ Les deux prints de débogage de l'endpoint achat ont été retirés ; la suite
 SQLite a été relancée intégralement. Aucun test n'a été désactivé.
 
 ## Limites du checkpoint
+
+Le cache en lecture seule expose des pages de 50 éléments par défaut
+(maximum 200), filtrées par exploitation. Les opérateurs reçoivent leurs
+tâches et les tâches générales. Le stock confirmé est agrégé côté serveur
+sans requête supplémentaire par lot. Six tests couvrent pagination,
+isolation, droits, coût des requêtes et refus des écritures.
 
 Cette adaptation backend est validée, mais **la phase 2C complète ne l'est
 pas encore**. L'enrôlement Flutter, le cache, les sessions personnelles et

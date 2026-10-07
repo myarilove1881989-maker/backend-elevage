@@ -5,7 +5,8 @@ from .models import ExploitationMembership, DeviceRegistration
 
 
 def membership_for(user):
-    return ExploitationMembership.objects.filter(user=user, exploitation_id=user.exploitation_id).first()
+    return ExploitationMembership.objects.select_related('user').filter(
+        user=user, exploitation_id=user.exploitation_id).first()
 
 
 def require_member(user):

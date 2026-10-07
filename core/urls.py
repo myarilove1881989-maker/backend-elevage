@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
    
 from . import views, foundation_views as foundation
 from .auth_views import MembershipRefreshView, logout
+from .cache_views import cache_page
 
 # ================= ROUTER =================
 router = DefaultRouter()
@@ -11,6 +12,7 @@ router.register("tasks", views.TaskViewSet)
 
 
 urlpatterns = [
+    path('cache-page/', cache_page),
     path('me/capabilities/', foundation.capabilities),
     path('memberships/', foundation.members),
     path('memberships/<int:pk>/', foundation.member_detail),
