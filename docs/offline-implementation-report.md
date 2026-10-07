@@ -39,3 +39,14 @@ intégralement avec succès. Aucun test n'a été supprimé.
 La suite SQLite finale compte 197 tests, 193 réussis et 4 skips PostgreSQL
 attendus. La validation mobile 2D est en cours. Aucune phase 2E n'a démarré.
 La phase 2D ne sera déclarée validée qu'après toutes ses portes mobiles.
+## Clôture 2D
+
+Source serveur `eab29d096d3b72bad06fc1f36f415bd493553ccf`, source mobile
+`930f4462cd3c380a630c04e0a7d5d860e234ebef` : phase 2D validée.
+CI mobile `37620191629` verte : suite Flutter, analyse sans erreur/warning,
+Web et APK, vraie API 24 avec file Jean/Paul réouverte et chiffrement natif.
+61 infos de style/dépréciation visibles, dont 5 conseils d'accolades nouveaux.
+Suites serveur 197 SQLite / 197 PostgreSQL de test passent selon les skips
+spécifiques au moteur décrits ci-dessous. PR #7 et mobile #9 en brouillon.
+Aucune application métier terrain n'est encore mise en œuvre à ce jalon.
+Production, branches principales et politique réelle inchangées.
