@@ -3,7 +3,8 @@ from decimal import Decimal
 import copy
 import threading
 from unittest import skipUnless
-from django.db import connection, connections
+from django.db import connection, connections, transaction, DatabaseError
+from django.core.exceptions import ValidationError
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
@@ -58,6 +59,29 @@ class TerrainSalesTests(OperationFixture,TestCase):
         self.assertEqual(Vente.objects.get().reste_a_payer,Decimal('0.00'))
         self.assertEqual(recognized.created_by,self.jean)
         self.assertEqual(Payment.objects.count(),1);self.assertEqual(Lettrage.objects.count(),1)
+
+    def test_cash_physical_amount_cannot_be_rewritten_while_allocation_can_evolve(self):
+        sale=self.sale();self.apply(sale);self.apply(self.cash(sale))
+        cash=EncaissementTerrain.objects.get()
+        cash.montant_recu=Decimal('30000.00')
+        with self.assertRaises(ValidationError):cash.save()
+        cash.refresh_from_db()
+        with self.assertRaises(ValidationError):cash.delete()
+        cash.montant_affecte=Decimal('40000.00');cash.montant_a_rapprocher=Decimal('10000.00');cash.save()
+        cash.refresh_from_db();self.assertEqual(cash.montant_recu,Decimal('50000.00'))
+
+    @skipUnless(connection.vendor=='postgresql','Real PostgreSQL cash trigger required')
+    def test_postgresql_refuses_cash_origin_update_and_delete_with_raw_sql(self):
+        sale=self.sale();self.apply(sale);self.apply(self.cash(sale))
+        pk=EncaissementTerrain.objects.get().pk
+        for statement in [
+            'UPDATE core_encaissementterrain SET montant_recu=30000,montant_a_rapprocher=0 WHERE id=%s',
+            'DELETE FROM core_encaissementterrain WHERE id=%s',
+        ]:
+            with self.assertRaises(DatabaseError) as error:
+                with transaction.atomic(),connection.cursor() as cursor:cursor.execute(statement,[pk])
+            self.assertEqual(getattr(error.exception.__cause__,'sqlstate',None) or getattr(error.exception.__cause__,'pgcode',None),'P0001')
+        self.assertEqual(EncaissementTerrain.objects.get().montant_recu,Decimal('50000.00'))
 
     def test_exact_cents_and_dependency_client_sale_cash_reverse_order(self):
         client=self.terrain('CLIENT',{'nom':'Client local'},1)

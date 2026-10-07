@@ -103,6 +103,19 @@ class EncaissementTerrain(AuditedModel):
     mode = models.CharField(max_length=20, choices=[(s,s) for s in ('ESPECES','MOBILE_MONEY','VIREMENT','CHEQUE')])
     note = models.TextField(blank=True)
 
+    origin_fields = ('exploitation_id','submission_id','client_id','created_by_id','payment_id',
+        'business_occurred_at','montant_recu','mode','note')
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            original = type(self)._base_manager.values(*self.origin_fields).get(pk=self.pk)
+            if any(original[field] != getattr(self,field) for field in self.origin_fields):
+                raise ValidationError('The recognized physical cash receipt is immutable.')
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('The recognized physical cash receipt is immutable.')
+
     class Meta:
         constraints = [
             models.CheckConstraint(condition=models.Q(montant_recu__gt=0), name='terrain_cash_positive'),

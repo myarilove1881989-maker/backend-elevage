@@ -166,3 +166,19 @@ relancé depuis le dépôt. Test de cache ajouté : erreur de chemin de fixture
 corrigée, puis format de dette harmonisé à deux décimales. 21 tests ciblés
 ventes/exports passent avec deux skips PG. Suites complètes corrigées et CI
 mobile restent requises avant clôture 2F. Aucune production touchée.
+
+### Vérifications supplémentaires 2F
+
+Checkpoint serveur `edd5a4a6500bb71ebb45e585f042af4fff06ff8d` : suites
+corrigées 230 SQLite (222 réussis, 8 skips PG) et 230 PostgreSQL (228 réussis,
+2 skips SQLite), migrations et contrôles passent ; cluster local arrêté.
+Le montant physique reconnu est désormais aussi protégé dans le modèle
+et par le trigger PostgreSQL additif 0024 : UPDATE de l'origine ou DELETE
+refusés, affectations évolutives conservées. Quinze tests ciblés passent
+sous SQLite avec trois skips PG ; régression complète de cet ajout requise.
+
+CI mobile initiale `37642626542` : analyse réussie, 166 tests réussis et un
+échec de fixture. Le test supposait le mauvais ordre de listOutbox à la
+réouverture ; il recherche désormais l'encaissement par son UUID et vérifie
+toujours ses deux dépendances et l'auteur. Le parcours natif de ce run
+reste en cours ; aucune porte 2F n'est considérée entièrement validée.
