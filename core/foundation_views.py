@@ -9,6 +9,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
+from django.db.models import Exists, OuterRef, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -307,12 +308,15 @@ class AuditFilters(serializers.Serializer):
     actor_user_id = serializers.IntegerField(min_value=1, required=False)
     decision_actor_id = serializers.IntegerField(min_value=1, required=False)
     operation_id = serializers.UUIDField(required=False)
+    include_related_object = serializers.BooleanField(required=False, default=False)
     correlation_id = serializers.UUIDField(required=False)
     source = serializers.ChoiceField(choices=['ONLINE', 'OFFLINE', 'RECONCILE'], required=False)
     since = serializers.DateTimeField(required=False)
     until = serializers.DateTimeField(required=False)
 
     def validate(self, data):
+        if data.get('include_related_object') and 'operation_id' not in data:
+            raise ValidationError('RELATED_OBJECT_REQUIRES_OPERATION')
         if 'since' in data and 'until' in data and data['since'] > data['until']:
             raise ValidationError('INVALID_AUDIT_DATE_RANGE')
         return data
@@ -328,6 +332,18 @@ def audit_events(request):
     filters = AuditFilters(data=request.query_params)
     filters.is_valid(raise_exception=True)
     values = dict(filters.validated_data)
+    related = values.pop('include_related_object')
+    if related:
+        operation_id = values.pop('operation_id')
+        # Derive affected objects exclusively from this farm's immutable audit.
+        # A declaration's untrusted reference cannot widen access to another object.
+        object_events = AuditEvent.objects.filter(
+            exploitation_id=owner.exploitation_id, operation_id=operation_id,
+            category__in=['BUSINESS', 'AGENDA'],
+            entity_type=OuterRef('entity_type'), entity_id=OuterRef('entity_id'),
+        ).exclude(entity_type__in=['core.terrainsubmission', 'core.terrainoutcome', 'core.terraindecision'])
+        qs = qs.annotate(related_object=Exists(object_events)).filter(
+            Q(operation_id=operation_id) | Q(related_object=True))
     if 'since' in values:
         qs = qs.filter(received_at__gte=values.pop('since'))
     if 'until' in values:

@@ -31,6 +31,31 @@ class ReconciliationFixture(OperationFixture):
 
 
 class ReconciliationTests(ReconciliationFixture, TestCase):
+    def test_related_object_timeline_includes_later_online_edits_without_tenant_leak(self):
+        from core.audit import ActorContext, audit_scope
+        operation=self.terrain('CLIENT',{'nom':'Client Jean'})
+        self.apply(operation)
+        customer=Client.objects.get(nom='Client Jean')
+        with audit_scope(ActorContext(self.owner.pk,self.farm.pk)):
+            customer.nom='Client corrigé en ligne';customer.save()
+        online=AuditEvent.objects.get(entity_type='core.client',entity_id=str(customer.pk),source='ONLINE',action='UPDATE')
+        foreign=AuditEvent.objects.create(exploitation_id=self.farm.pk+10000,actor_user_id=self.owner.pk,
+            entity_type='core.client',entity_id=str(customer.pk),action='UPDATE')
+        unrelated=AuditEvent.objects.create(exploitation_id=self.farm.pk,actor_user_id=self.owner.pk,
+            entity_type='core.client',entity_id=str(self.customer.pk),action='UPDATE')
+        client=APIClient();client.force_authenticate(self.owner)
+        query={'operation_id':operation['client_operation_id']}
+        original=client.get('/api/audit-events/',query)
+        self.assertNotIn(online.pk,[row['id'] for row in original.data['results']])
+        query['include_related_object']='true'
+        response=client.get('/api/audit-events/',query)
+        self.assertEqual(response.status_code,200,response.data)
+        ids=[row['id'] for row in response.data['results']]
+        self.assertIn(online.pk,ids);self.assertNotIn(foreign.pk,ids);self.assertNotIn(unrelated.pk,ids)
+        self.assertEqual(client.get('/api/audit-events/?include_related_object=true').status_code,400)
+        query['operation_id']=str(uuid.uuid4())
+        self.assertEqual(client.get('/api/audit-events/',query).data['count'],0)
+
     def test_disabled_original_author_can_be_explicitly_decided_without_reactivation_or_transfer(self):
         operation=self.terrain('CLIENT',{'nom':'Client original'})
         self.member.is_active=False;self.member.save()
