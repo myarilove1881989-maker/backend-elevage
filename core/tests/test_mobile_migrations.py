@@ -12,7 +12,8 @@ class MembershipMigrationTests(TransactionTestCase):
         self.apps = executor.loader.project_state([('core', '0015_mouvement_lot_origine')]).apps
 
     def tearDown(self):
-        MigrationExecutor(connection).migrate(self.latest)
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes('core'))
         super().tearDown()
 
     def migrate(self):

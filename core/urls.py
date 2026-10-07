@@ -5,6 +5,7 @@ from rest_framework.routers import DefaultRouter
 from . import views, foundation_views as foundation
 from .auth_views import MembershipRefreshView, logout
 from .cache_views import cache_page
+from .terrain_views import transport_challenge, submissions, submission_status
 
 # ================= ROUTER =================
 router = DefaultRouter()
@@ -12,6 +13,9 @@ router.register("tasks", views.TaskViewSet)
 
 
 urlpatterns = [
+    path('offline/transport-challenge/', transport_challenge),
+    path('offline/submissions/', submissions),
+    path('offline/submissions/status/', submission_status),
     path('cache-page/', cache_page),
     path('me/capabilities/', foundation.capabilities),
     path('memberships/', foundation.members),
