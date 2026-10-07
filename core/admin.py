@@ -168,7 +168,7 @@ class ExploitationAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
 
     @admin.display(description="CA (FCFA)")
     def chiffre_affaires(self, obj):
-        return obj.lots.aggregate(total=Sum("ventes__montant_total"))["total"] or 0
+        return Vente.objects.filter(lot__exploitation=obj).aggregate(total=Sum("montant_total"))["total"] or 0
 
     @admin.display(description="Payé (FCFA)")
     def paiements(self, obj):

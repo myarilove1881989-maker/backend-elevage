@@ -272,10 +272,10 @@ class CategorieDepense(AuditedModel):
 # DEPENSE
 # ===============================
 
-class Depense(AuditedModel):
+class Depense(ReversibleAuditedModel):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
 
-    objects = TenantQuerySet.as_manager()
+    objects = ActiveBusinessManager.from_queryset(TenantQuerySet)()
 
     lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name='depenses')
 
@@ -294,7 +294,7 @@ class Depense(AuditedModel):
 # ACHAT
 # ===============================
 
-class Achat(AuditedModel):
+class Achat(ReversibleAuditedModel):
     exploitation = models.ForeignKey("Exploitation", on_delete=models.CASCADE)
     lot = models.ForeignKey("Lot", on_delete=models.CASCADE, related_name="achats")
 
@@ -349,7 +349,7 @@ class Task(AuditedModel):
 # CLIENT
 # ===============================
 
-class Client(AuditedModel):
+class Client(ReversibleAuditedModel):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     nom = models.CharField(max_length=255)
     telephone = models.CharField(max_length=20, blank=True)
@@ -407,7 +407,7 @@ class Lettrage(ReversibleAuditedModel):
 # PRODUCTION D'ŒUFS
 # ===============================
 
-class CollecteOeufs(AuditedModel):
+class CollecteOeufs(ReversibleAuditedModel):
     exploitation = models.ForeignKey(
         Exploitation,
         on_delete=models.CASCADE,
@@ -434,7 +434,7 @@ class CollecteOeufs(AuditedModel):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
+    class Meta(ReversibleAuditedModel.Meta):
         ordering = ("-collecte_at", "-id")
 
     @property
@@ -639,7 +639,7 @@ class VenteOeufs(ReversibleAuditedModel):
         return f"Vente d'œufs #{self.vente_id} - {self.nombre_oeufs} œufs"
 
 
-class ConsommationAliment(AuditedModel):
+class ConsommationAliment(ReversibleAuditedModel):
     exploitation = models.ForeignKey(
         Exploitation,
         on_delete=models.CASCADE,
@@ -673,7 +673,7 @@ class ConsommationAliment(AuditedModel):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
+    class Meta(ReversibleAuditedModel.Meta):
         ordering = ("-date", "-distribution_at", "-id")
 
     @property
@@ -701,7 +701,7 @@ class ConsommationAliment(AuditedModel):
         return f"{self.lot} - {self.quantite_kg} kg le {self.date}"
 
 
-class PeseeProduction(AuditedModel):
+class PeseeProduction(ReversibleAuditedModel):
     """Pondération d'un échantillon d'animaux d'un lot de production."""
 
     exploitation = models.ForeignKey(
@@ -727,9 +727,10 @@ class PeseeProduction(AuditedModel):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
+    class Meta(ReversibleAuditedModel.Meta):
         ordering = ("pesee_at", "id")
         constraints = [
+            *ReversibleAuditedModel._meta.constraints,
             models.CheckConstraint(
                 condition=models.Q(nombre_animaux_peses__gt=0),
                 name="pesee_animaux_gt_zero",

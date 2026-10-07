@@ -57,9 +57,15 @@ def reconciliation_detail(request, operation_uuid):
     row = get_object_or_404(TerrainSubmission.objects.select_related('outcome'),
         exploitation_id=member.exploitation_id, client_operation_id=operation_uuid)
     result = submission_data(row)
-    result['decisions'] = list(row.decisions.order_by('decided_at', 'pk').values(
+    pagination = PageNumberPagination()
+    pagination.page_size = 50
+    pagination.page_query_param = 'decision_page'
+    page = pagination.paginate_queryset(row.decisions.order_by('-decided_at', '-pk'), request)
+    result['decisions_count'] = pagination.page.paginator.count
+    result['decisions_next_page'] = pagination.page.next_page_number() if pagination.page.has_next() else None
+    result['decisions'] = [dict((name,getattr(decision,name)) for name in (
         'decision_uuid', 'decision_actor_id', 'action', 'reason', 'effective_payload',
-        'before_data', 'after_data', 'decided_at'))
+        'before_data', 'after_data', 'decided_at')) for decision in page]
     return Response(result)
 
 

@@ -42,7 +42,11 @@ def resolve(row, reference, kind='LOT', model=Lot):
         pk = reference['server_id']
     try:
         tenant_field = 'lot__exploitation_id' if model._meta.model_name in ('depense','vente') else 'exploitation_id'
-        return model.objects.select_for_update().get(pk=pk, **{tenant_field:row.exploitation_id})
+        entity = model.objects.select_for_update().get(pk=pk, **{tenant_field:row.exploitation_id})
+        if model is Lot and TerrainEntityMapping.objects.filter(exploitation_id=row.exploitation_id,
+            entity_type='LOT',server_entity_id=pk,submission__outcome__business_status='SUPERSEDED').exists():
+            raise BusinessConflict('LOT_ORIGIN_REVERSED')
+        return entity
     except model.DoesNotExist:
         raise BusinessConflict('REFERENCE_OUTSIDE_FARM')
 

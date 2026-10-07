@@ -14,10 +14,10 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from .audit import audit_scope, snapshot, safe_data, record
 from .models import (Exploitation, TerrainSubmission, TerrainOutcome,
-    TerrainDecision, EncaissementTerrain, Lettrage, Vente, VenteOeufs)
+    TerrainDecision, EncaissementTerrain, Lettrage, Vente, VenteOeufs, Task)
 from .permissions import require_member
 from .terrain_transport import StrictInput, canonical, reject_secrets, receipt
-from .terrain_application import HANDLERS, BusinessConflict, context_for, _dependencies
+from .terrain_application import HANDLERS, BusinessConflict, context_for, _dependencies, TaskReportInput, validated
 from .terrain_operations import map_entity, Reference, resolve
 
 
@@ -67,6 +67,23 @@ def decision_result(decision, row):
 
 
 def apply_effective(row, outcome, farm, data):
+    if row.entity_type == 'TASK' and data['action'] == 'CORRECTION' and outcome.applied_at is not None:
+        values = validated(TaskReportInput,data['payload'])
+        if values.pop('task_id') != row.payload.get('task_id'):
+            raise ValidationError('CORRECTION_OUTSIDE_ORIGINAL_TASK')
+        task = Task.objects.select_for_update().get(pk=row.payload['task_id'],exploitation_id=row.exploitation_id)
+        if not data['expected_entity_version'] or data['expected_entity_version'] != str(task.version):
+            raise ValidationError('TASK_VERSION_CONFLICT')
+        if task.status == 'CANCELLED':
+            raise ValidationError('TASK_OWNER_CANCELLATION_PRESERVED')
+        task.status = values['status']
+        if 'report' in values: task.report = values['report']
+        task.completed_by_id = row.author_user_id if task.status == 'DONE' else None
+        task.completed_at = row.business_occurred_at if task.status == 'DONE' else None
+        task.version += 1; task.save()
+        outcome.business_status = 'CONFIRMED'; outcome.reason_code = ''
+        outcome.server_version = str(task.version)
+        return data['payload']
     if outcome.applied_at is not None or outcome.business_status == 'CONFIRMED':
         raise ValidationError('ALREADY_APPLIED_USE_EXPLICIT_REVERSAL')
     if row.entity_type not in HANDLERS:

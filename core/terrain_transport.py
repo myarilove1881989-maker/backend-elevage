@@ -158,6 +158,12 @@ def receipt(row):
             data['cash_recognition'] = {'montant_recu':str(cash.montant_recu),
                 'montant_affecte':str(cash.montant_affecte),'montant_a_rapprocher':str(cash.montant_a_rapprocher),
                 'payment_id':cash.payment_id,'mode':cash.mode}
+    if row.entity_type == 'TASK' and type(row.payload.get('task_id')) is int:
+        from .models import Task
+        from .task_views import AgendaSerializer
+        task = Task.objects.filter(pk=row.payload['task_id'],exploitation_id=row.exploitation_id).first()
+        if task:
+            data['task_snapshot'] = {**AgendaSerializer(task).data,'exploitation':row.exploitation_id}
     return data
 
 

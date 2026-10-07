@@ -20,9 +20,15 @@ import secrets
 # Django ORM
 from django.db.models import (
     IntegerField, Sum, F, Value, CharField,
-    Case, When, DecimalField, ExpressionWrapper, prefetch_related_objects
+    Case, When, DecimalField, ExpressionWrapper, prefetch_related_objects, OuterRef, Subquery
 )
 from django.db.models.functions import Coalesce
+
+
+def active_lot_money(model, field):
+    """Use operational facts, without multiplying sums across related joins."""
+    return Subquery(model.objects.filter(lot_id=OuterRef('pk')).order_by().values('lot_id')
+        .annotate(total=Sum(field)).values('total')[:1], output_field=DecimalField())
 
 # Django utils
 from django.utils.timezone import now
@@ -1086,15 +1092,15 @@ def api_marge_par_lot(request):
         )
         .annotate(
             total_ca=Coalesce(
-                Sum('ventes__montant_total'),
+                active_lot_money(Vente, 'montant_total'),
                 Value(0, output_field=DecimalField())
             ),
             total_depenses=Coalesce(
-                Sum('depenses__montant'),
+                active_lot_money(Depense, 'montant'),
                 Value(0, output_field=DecimalField())
             ),
             total_achats=Coalesce(
-                Sum('achats__prix_total'),
+                active_lot_money(Achat, 'prix_total'),
                 Value(0, output_field=DecimalField())
             ),
         )
@@ -1482,11 +1488,11 @@ def api_performance_lots(request):
         .filter(exploitation=exploitation)
         .annotate(
             total_ca=Coalesce(
-                Sum('ventes__montant_total'),
+                active_lot_money(Vente, 'montant_total'),
                 Value(0, output_field=DecimalField())
             ),
             total_depenses=Coalesce(
-                Sum('depenses__montant'),
+                active_lot_money(Depense, 'montant'),
                 Value(0, output_field=DecimalField())
             ),
         )
