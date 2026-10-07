@@ -170,6 +170,15 @@ def receipt(row):
 @transaction.atomic
 def receive(request, operations):
     device = verify_transport(request,'RECEIVE')
+    return receive_declarations(device, operations)
+
+
+def receive_declarations(device, operations, *, recovery_actor_id=None, recovery_reason=''):
+    """Internal receipt core; caller holds farm/device locks and verified proof.
+
+    Recovery never sends the originals through automatic business processing.
+    Its proof and authorization live in the dedicated recovery service.
+    """
     results = []
     for data in operations:
         if (data['device_id'] != device.pk or data['exploitation_id'] != device.exploitation_id
@@ -205,21 +214,30 @@ def receive(request, operations):
             status, reason = 'NEEDS_RECONCILIATION', 'DEPENDENCY_CYCLE'
         elif data['dependencies']:
             status, reason = 'WAITING_DEPENDENCY', 'DEPENDENCY_NOT_CONFIRMED'
+        if recovery_actor_id is not None:
+            status, reason = 'NEEDS_RECONCILIATION', 'RECOVERED_REVOKED_DEVICE'
         fields = dict(data)
         fields['dependencies'] = [str(v) for v in fields['dependencies']]
         fields.pop('exploitation_id'); fields.pop('device_id'); fields.pop('offline_authorization_id')
         context = ActorContext(data['author_user_id'],device.exploitation_id,device.pk,'DEVICE',
-            source='OFFLINE', operation_id=data['client_operation_id'],
+            decision_actor_id=recovery_actor_id,
+            source='RECOVERY' if recovery_actor_id is not None else 'OFFLINE', operation_id=data['client_operation_id'],
             local_entity_id=data['local_entity_id'], business_occurred_at=data['business_occurred_at'])
-        with audit_scope(context):
+        with audit_scope(context, reason_code=reason if recovery_actor_id is not None else '',
+                         reason_text=recovery_reason):
             row = TerrainSubmission.objects.create(exploitation=device.exploitation,device=device,
                 offline_authorization=grant,declaration_digest=digest,**fields)
-            TerrainOutcome.objects.create(submission=row,business_status=status,reason_code=reason)
+            TerrainOutcome.objects.create(submission=row,business_status=status,reason_code=reason,
+                reason_text=recovery_reason)
             AuditEvent.objects.create(exploitation_id=device.exploitation_id,actor_user_id=row.author_user_id,
-                device_id=device.pk,transport_identity='DEVICE',action='TERRAIN_RECEIVED',
+                decision_actor_id=recovery_actor_id, device_id=device.pk,transport_identity='DEVICE',
+                category='SECURITY' if recovery_actor_id is not None else 'BUSINESS',
+                action='TERRAIN_RECOVERED' if recovery_actor_id is not None else 'TERRAIN_RECEIVED',
                 entity_type='core.terrainsubmission',entity_id=str(row.pk),operation_id=row.client_operation_id,
                 local_entity_id=row.local_entity_id,business_occurred_at=row.business_occurred_at,
-                source='OFFLINE',after_data={'declaration_digest':digest,'business_status':status})
+                source=context.source, reason_code=reason if recovery_actor_id is not None else '',
+                reason_text=recovery_reason,
+                after_data={'declaration_digest':digest,'business_status':status})
         results.append(receipt(row))
     return device.pk, results
 

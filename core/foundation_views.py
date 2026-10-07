@@ -67,7 +67,7 @@ class DeviceInput(serializers.Serializer):
 
 class ChallengeInput(serializers.Serializer):
     device_id = serializers.IntegerField(min_value=1)
-    purpose = serializers.ChoiceField(choices=['WRITE', 'ACTIVATE', 'REPLACE', 'GRANT'])
+    purpose = serializers.ChoiceField(choices=['WRITE', 'ACTIVATE', 'REPLACE', 'GRANT', 'RECOVER'])
 
 
 @api_view(['GET'])
@@ -169,7 +169,11 @@ def challenge(request):
     device = get_object_or_404(DeviceRegistration, pk=data.validated_data['device_id'],
                                exploitation=member.exploitation)
     purpose = data.validated_data['purpose']
-    if purpose in ('ACTIVATE', 'REPLACE'):
+    if purpose == 'RECOVER':
+        require_owner(request.user)
+        if device.status != 'REVOKED' or device.is_primary_writer:
+            raise ValidationError('Appareil révoqué requis pour une récupération explicite.')
+    elif purpose in ('ACTIVATE', 'REPLACE'):
         require_owner(request.user)
         if device.status != 'PENDING':
             raise ValidationError('Appareil en attente requis.')
@@ -310,7 +314,7 @@ class AuditFilters(serializers.Serializer):
     operation_id = serializers.UUIDField(required=False)
     include_related_object = serializers.BooleanField(required=False, default=False)
     correlation_id = serializers.UUIDField(required=False)
-    source = serializers.ChoiceField(choices=['ONLINE', 'OFFLINE', 'RECONCILE'], required=False)
+    source = serializers.ChoiceField(choices=['ONLINE', 'OFFLINE', 'RECONCILE', 'RECOVERY'], required=False)
     since = serializers.DateTimeField(required=False)
     until = serializers.DateTimeField(required=False)
 
