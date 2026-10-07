@@ -1745,8 +1745,9 @@ def api_statistiques_oeufs(request):
 
     date_debut_raw = request.GET.get("date_debut")
     date_fin_raw = request.GET.get("date_fin")
-    date_debut = parse_date(date_debut_raw) if date_debut_raw else now().date()
-    date_fin = parse_date(date_fin_raw) if date_fin_raw else now().date()
+    today = timezone.localdate()
+    date_debut = parse_date(date_debut_raw) if date_debut_raw else today
+    date_fin = parse_date(date_fin_raw) if date_fin_raw else today
     if date_debut is None or date_fin is None:
         return Response({"error": "Période invalide"}, status=400)
     if date_debut > date_fin:
