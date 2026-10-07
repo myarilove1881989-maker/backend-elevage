@@ -182,3 +182,16 @@ CI mobile initiale `37642626542` : analyse réussie, 166 tests réussis et un
 réouverture ; il recherche désormais l'encaissement par son UUID et vérifie
 toujours ses deux dépendances et l'auteur. Le parcours natif de ce run
 reste en cours ; aucune porte 2F n'est considérée entièrement validée.
+
+### Critères de survente et conditionnements 2F
+
+La relecture du paragraphe 19 a ajouté l'alerte forte et le motif requis
+lorsque la quantité dépasse le stock projeté. Le fait réel reste saisissable ;
+le stock confirmé ne devient pas négatif. Le motif est conservé dans la
+déclaration originale et les mouvements applicables. Le parcours natif
+vérifie la demande du motif puis la conservation de la survente.
+Conditionnement composé existant préservé : alvéoles de 30, supplément
+0–29 et prix total exact. Les dépassements de quantité SQL et de montant
+sont classés à rapprocher avant toute écriture métier, sans boucle de retry.
+18 tests ciblés serveur passent sous SQLite avec 3 skips PG ; nouvelle
+régression complète et CI mobile requises pour ce dernier complément.

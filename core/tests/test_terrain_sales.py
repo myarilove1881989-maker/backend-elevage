@@ -39,11 +39,28 @@ class TerrainSalesTests(OperationFixture,TestCase):
         self.assertEqual(AuditEvent.objects.filter(action='TERRAIN_APPLIED').count(),1)
 
     def test_oversale_retains_original_without_negative_stock(self):
-        operation=self.sale(21);receipt=self.apply(operation)
+        operation=self.sale(21);operation['payload']['note']='Vente physique, inventaire à vérifier.'
+        receipt=self.apply(operation)
         self.assertEqual(receipt['business_status'],'NEEDS_RECONCILIATION')
         self.assertEqual(receipt['reason_code'],'STOCK_INSUFFICIENT')
         self.assertEqual(TerrainSubmission.objects.get().payload,operation['payload'])
         self.assertFalse(Vente.objects.exists());self.assertEqual(self.lot.stock,20)
+
+    def test_animal_sale_note_and_client_are_kept_on_stock_movement(self):
+        operation=self.sale();operation['payload']['note']='Constat terrain'
+        self.apply(operation)
+        movement=self.lot.mouvements.get(type_mouvement='VENTE')
+        self.assertEqual(movement.note,'Constat terrain');self.assertEqual(movement.client,self.client)
+
+    def test_egg_quantity_and_amount_overflow_are_retained_for_review_instead_of_retrying_forever(self):
+        self.lot.type_production='OEUFS';self.lot.save()
+        operation=self.egg_sale(timezone.now(),2000000000)
+        operation['payload'].update(conditionnement='CARTON',oeufs_par_conditionnement=30)
+        self.assertEqual(self.apply(operation)['reason_code'],'QUANTITY_OUT_OF_RANGE')
+        second=self.egg_sale(timezone.now(),1000000);second['local_sequence']=2
+        second['payload']['prix_unitaire_conditionnement']='99999999.99'
+        self.assertEqual(self.apply(second)['reason_code'],'AMOUNT_OUT_OF_RANGE')
+        self.assertEqual(TerrainSubmission.objects.count(),2);self.assertFalse(VenteOeufs.objects.exists())
 
     def test_cash_50000_allocates_30000_and_preserves_20000_for_review(self):
         sale=self.sale();self.apply(sale);cash=self.cash(sale)
@@ -155,6 +172,16 @@ class TerrainSalesTests(OperationFixture,TestCase):
         self.assertEqual(receipt['business_status'],'NEEDS_RECONCILIATION')
         self.assertFalse(VenteOeufs.objects.exists());self.assertFalse(AffectationMouvementOeufs.objects.exists())
         self.assertEqual(MouvementOeufs.objects.count(),2)
+
+    def test_composed_egg_sale_preserves_existing_packaging_and_note(self):
+        at=timezone.now()-timedelta(hours=1);self.collect(at-timedelta(hours=1),100)
+        operation=self.terrain('VENTE_OEUFS',{'lot_ref':self.lot_ref(),'client_ref':{'server_id':self.client.pk},
+            'conditionnement':'COMPOSE','nombre_alveoles':2,'oeufs_supplementaires':5,'prix_total':'50.01','note':'Vente mixte terrain'})
+        operation['business_occurred_at']=at.isoformat()
+        self.assertEqual(self.apply(operation)['business_status'],'CONFIRMED')
+        sale=VenteOeufs.objects.get()
+        self.assertEqual(sale.nombre_oeufs,65);self.assertEqual(sale.montant_total,Decimal('50.01'))
+        self.assertIn('Vente mixte terrain',sale.mouvement_stock.note)
 
     def test_fifo_excludes_later_same_day_and_uses_oldest_eligible_origins(self):
         at=timezone.now()-timedelta(days=1)

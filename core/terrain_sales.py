@@ -15,13 +15,14 @@ def client_for(row, payload):
 
 
 class AnimalSaleInput(serializers.Serializer):
-    quantite = serializers.IntegerField(min_value=1)
+    quantite = serializers.IntegerField(min_value=1,max_value=2147483647)
     prix_unitaire = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
+    note = serializers.CharField(max_length=10000,allow_blank=True,default='')
 
 
 def animal_sale(row, user):
     create_only(row)
-    payload, lot = data_with_lot(row, ['client_ref','quantite','prix_unitaire'])
+    payload, lot = data_with_lot(row, ['client_ref','quantite','prix_unitaire','note'])
     client = client_for(row, payload)
     serializer = AnimalSaleInput(data=payload); serializer.is_valid(raise_exception=True)
     data = serializer.validated_data
@@ -31,9 +32,10 @@ def animal_sale(row, user):
         raise BusinessConflict('STOCK_INSUFFICIENT')
     if data['quantite'] * data['prix_unitaire'] > Decimal('9999999999.99'):
         raise BusinessConflict('AMOUNT_OUT_OF_RANGE')
+    note=data.pop('note')
     sale = Vente.objects.create(lot=lot, client=client, created_by=user, date=day, **data)
     Mouvement.objects.create(lot=lot, exploitation_id=row.exploitation_id, created_by=user,
-        type_mouvement='VENTE', vente=sale, date=day, **data)
+        type_mouvement='VENTE', vente=sale, client=client, note=note, date=day, **data)
     return mark_lots(sale,lot)
 
 
@@ -41,13 +43,20 @@ def egg_sale(row,user):
     create_only(row)
     payload,lot=data_with_lot(row,['client_ref','conditionnement','nombre_conditionnements',
         'oeufs_par_conditionnement','prix_unitaire_conditionnement','nombre_alveoles',
-        'oeufs_supplementaires','prix_total'])
+        'oeufs_supplementaires','prix_total','note'])
+    note=serializers.CharField(max_length=10000,allow_blank=True).run_validation(payload.pop('note',''))
     client=client_for(row,payload)
     payload.update(lot=lot.pk,client=client.pk,date=timezone.localdate(row.business_occurred_at).isoformat())
     serializer=VenteOeufsSerializer(data=payload,context=context(user));serializer.is_valid(raise_exception=True)
+    data=serializer.validated_data
+    quantity=data['nombre_conditionnements']*data['oeufs_par_conditionnement']
+    if quantity>2147483647:
+        raise BusinessConflict('QUANTITY_OUT_OF_RANGE')
+    if data['nombre_conditionnements']*data['prix_unitaire_conditionnement']>Decimal('9999999999.99'):
+        raise BusinessConflict('AMOUNT_OUT_OF_RANGE')
     try:
         sale=create_egg_sale(validated_data=dict(serializer.validated_data),user=user,
-            business_occurred_at=row.business_occurred_at)
+            business_occurred_at=row.business_occurred_at,terrain_note=note)
     except ValueError:
         raise BusinessConflict('EGG_STOCK_REVIEW_REQUIRED')
     return mark_lots(sale,lot)

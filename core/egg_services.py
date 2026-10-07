@@ -279,7 +279,7 @@ def delete_collection(collection):
 
 
 @transaction.atomic
-def create_egg_sale(*, validated_data, user, business_occurred_at=None):
+def create_egg_sale(*, validated_data, user, business_occurred_at=None, terrain_note=''):
     requested_lot = validated_data.pop("lot")
     allocations = validated_data.pop("affectations", None)
     lot = Lot.objects.select_for_update().get(
@@ -342,7 +342,7 @@ def create_egg_sale(*, validated_data, user, business_occurred_at=None):
         date=movement_at,
         vente_oeufs=vente_oeufs,
         created_by=user,
-        note=f"Vente d'œufs #{vente.pk}",
+        note=f"Vente d'œufs #{vente.pk}" + (f' — {terrain_note}' if terrain_note else ''),
     )
     affect_egg_exit(mouvement, allocations)
     return vente_oeufs
