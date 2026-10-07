@@ -40,7 +40,7 @@ class TransportFixture:
         return {'client_operation_id':str(uuid.uuid4()),'local_sequence':sequence,
             'author_user_id':self.jean.pk,'author_membership_id':self.member.pk,
             'device_id':self.device.pk,'device_generation':1,'exploitation_id':self.farm.pk,
-            'offline_authorization_id':str(self.grant.pk),'entity_type':'CLIENT','operation_type':'CREATE',
+            'offline_authorization_id':str(self.grant.pk),'entity_type':'TERRAIN_NOTE','operation_type':'CREATE',
             'local_entity_id':str(uuid.uuid4()),'payload':{'nom':'Client terrain synthétique'},'dependencies':[],
             'business_occurred_at':timezone.now().isoformat(),'local_recorded_at':timezone.now().isoformat()}
 

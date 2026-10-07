@@ -3,8 +3,9 @@
 | Phase | Statut | Validation | Déployée |
 |---|---|---|---|
 | 2C | VALIDÉE | Android API 24, Flutter/Web/APK, preuve native contre PostgreSQL | Non |
-| 2D | PARTIELLE | Serveur validé ; validation mobile en cours | Non |
-| 2E–2I | NON COMMENCÉES | Portes suivantes | Non |
+| 2D | VALIDÉE | 139 tests Flutter, Web/APK/API 24 ; 197 tests par moteur serveur | Non |
+| 2E | PARTIELLE | Clients et comptes rendus de tâches : validation en cours | Non |
+| 2F–2I | NON COMMENCÉES | Portes suivantes | Non |
 
 ## Checkpoint serveur 2D
 
@@ -37,8 +38,8 @@ deux noms de propriété et vérifie toujours P0001. La suite a été relancée
 intégralement avec succès. Aucun test n'a été supprimé.
 
 La suite SQLite finale compte 197 tests, 193 réussis et 4 skips PostgreSQL
-attendus. La validation mobile 2D est en cours. Aucune phase 2E n'a démarré.
-La phase 2D ne sera déclarée validée qu'après toutes ses portes mobiles.
+attendus. Ces nombres décrivent le checkpoint serveur initial ; la clôture
+mobile et l'ouverture de 2E sont documentées plus bas.
 ## Clôture 2D
 
 Source serveur `eab29d096d3b72bad06fc1f36f415bd493553ccf`, source mobile
@@ -50,3 +51,25 @@ Suites serveur 197 SQLite / 197 PostgreSQL de test passent selon les skips
 spécifiques au moteur décrits ci-dessous. PR #7 et mobile #9 en brouillon.
 Aucune application métier terrain n'est encore mise en œuvre à ce jalon.
 Production, branches principales et politique réelle inchangées.
+
+## Phase 2E — premier checkpoint clients et tâches, EN COURS
+
+Migration additive 0021 : correspondance exploitation/type/UUID local vers
+identifiant serveur. La réception immuable termine sa transaction avant
+l'application métier ; une panne d'application laisse le reçu à reprendre.
+L'application utilise une transaction et des savepoints : payload invalide,
+version ou affectation de tâche divergente deviennent NEEDS_RECONCILIATION.
+La création client et les états/comptes rendus de tâches gardent leur auteur,
+leur date métier et leur provenance OFFLINE dans les événements d'audit.
+Les dépendances reçues dans l'ordre inverse attendent leur parent confirmé.
+
+22 tests ciblés initiaux passés (2 skips PostgreSQL) avant extension des
+scénarios. Suites complètes SQLite/PostgreSQL et CI mobile en cours : ce
+checkpoint ne valide pas la phase 2E entière. Les autres modules terrain,
+ventes et paiements ne sont pas inclus à ce stade.
+
+Première suite PostgreSQL de ce checkpoint : 207 tests, deux erreurs de
+longueur des nouveaux codes de conflit dans AuditEvent.reason_code (30).
+SQLite n'impose pas la longueur VARCHAR. Les codes ont été raccourcis sans
+tronquer l'historique ni modifier le schéma d'audit. Les assertions vérifient
+aussi l'événement d'audit correspondant. Relance complète en cours.

@@ -18,6 +18,10 @@ class ActorContext:
     device_id: int | None = None
     transport_identity: str = "USER"
     decision_actor_id: int | None = None
+    source: str = 'ONLINE'
+    operation_id: uuid.UUID | None = None
+    local_entity_id: uuid.UUID | None = None
+    business_occurred_at: datetime | None = None
 
 
 _scope = ContextVar("audit_scope", default=None)
@@ -72,6 +76,9 @@ def record(obj, action, before=None, after=None, *, category=None):
         correlation_id=correlation, before_data=safe_data(before or {}),
         after_data=safe_data(after or {}), reason_code=reason, reason_text=text,
         applied_at=timezone.now(),
+        source=context.source, operation_id=context.operation_id,
+        local_entity_id=context.local_entity_id,
+        business_occurred_at=context.business_occurred_at,
     )
 
 

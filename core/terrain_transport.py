@@ -13,7 +13,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from .audit import ActorContext, audit_scope
 from .device_services import load_public_key, verify_signature
 from .models import (AuditEvent, DeviceRegistration, DeviceTransportChallenge,
-    Exploitation, OfflineAuthorization, TerrainSubmission, TerrainOutcome)
+    Exploitation, OfflineAuthorization, TerrainSubmission, TerrainOutcome, TerrainEntityMapping)
 
 PATHS = {'RECEIVE': '/api/offline/submissions/', 'STATUS': '/api/offline/submissions/status/'}
 
@@ -141,7 +141,10 @@ def receipt(row):
         'reason_text':result.reason_text, 'author_user_id':row.author_user_id,
         'received_at':row.received_at.isoformat(), 'server_entity_type':result.server_entity_type,
         'server_entity_id':result.server_entity_id, 'server_version':result.server_version,
-        'applied_at':result.applied_at.isoformat() if result.applied_at else None}
+        'applied_at':result.applied_at.isoformat() if result.applied_at else None,
+        'entity_mappings':[{'entity_type':mapping.entity_type,
+            'local_entity_id':str(mapping.local_entity_id),'server_entity_id':mapping.server_entity_id}
+            for mapping in TerrainEntityMapping.objects.filter(submission=row)]}
 
 
 @transaction.atomic
@@ -185,7 +188,9 @@ def receive(request, operations):
         fields = dict(data)
         fields['dependencies'] = [str(v) for v in fields['dependencies']]
         fields.pop('exploitation_id'); fields.pop('device_id'); fields.pop('offline_authorization_id')
-        context = ActorContext(data['author_user_id'],device.exploitation_id,device.pk,'DEVICE')
+        context = ActorContext(data['author_user_id'],device.exploitation_id,device.pk,'DEVICE',
+            source='OFFLINE', operation_id=data['client_operation_id'],
+            local_entity_id=data['local_entity_id'], business_occurred_at=data['business_occurred_at'])
         with audit_scope(context):
             row = TerrainSubmission.objects.create(exploitation=device.exploitation,device=device,
                 offline_authorization=grant,declaration_digest=digest,**fields)
@@ -196,7 +201,7 @@ def receive(request, operations):
                 local_entity_id=row.local_entity_id,business_occurred_at=row.business_occurred_at,
                 source='OFFLINE',after_data={'declaration_digest':digest,'business_status':status})
         results.append(receipt(row))
-    return results
+    return device.pk, results
 
 
 @transaction.atomic
@@ -204,4 +209,4 @@ def status_receipts(request, operation_ids):
     device = verify_transport(request,'STATUS')
     rows = TerrainSubmission.objects.select_related('outcome').filter(
         exploitation_id=device.exploitation_id, client_operation_id__in=operation_ids)
-    return [receipt(row) for row in rows]
+    return device.pk, [receipt(row) for row in rows]

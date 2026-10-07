@@ -74,3 +74,15 @@ class TerrainOutcome(AuditedModel):
 
     class Meta:
         constraints = [models.CheckConstraint(condition=models.Q(business_status__in=BUSINESS_STATES), name='terrain_business_status_valid')]
+
+
+class TerrainEntityMapping(AuditedModel):
+    exploitation = models.ForeignKey('core.Exploitation', on_delete=models.PROTECT)
+    entity_type = models.CharField(max_length=32)
+    local_entity_id = models.UUIDField()
+    server_entity_id = models.PositiveBigIntegerField()
+    submission = models.ForeignKey(TerrainSubmission, on_delete=models.PROTECT)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['exploitation', 'entity_type', 'local_entity_id'],
+            name='terrain_farm_entity_mapping_unique')]
