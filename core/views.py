@@ -1274,7 +1274,6 @@ def api_delete_depense(request, pk):
 @permission_classes([IsAuthenticated, HasExploitation])
 @audited_endpoint
 def api_create_achat(request):
-    print("🔥 CREATE ACHAT CALLED")
 
     serializer = AchatSerializer(
         data=request.data,
@@ -1295,7 +1294,6 @@ def api_create_achat(request):
         }, status=201)
 
     except Exception as e:
-        print("🔥 ERREUR CREATE ACHAT:", str(e))
         traceback.print_exc()
 
         return Response({

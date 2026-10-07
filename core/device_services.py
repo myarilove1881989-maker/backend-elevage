@@ -1,9 +1,10 @@
-"""Ed25519 proof of possession. UUID/header alone never authorizes a device."""
+"""Device proof: Ed25519 or Android Keystore P-256/SHA-256, never UUID alone."""
 import base64
 import hashlib
 import uuid
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from django.db import transaction
 from django.utils import timezone
@@ -14,11 +15,21 @@ from .models import DeviceChallenge, DeviceRegistration
 def load_public_key(pem):
     try:
         key = serialization.load_pem_public_key(pem.encode('ascii'))
-        if not isinstance(key, Ed25519PublicKey):
+        if not (isinstance(key, Ed25519PublicKey) or (
+            isinstance(key, ec.EllipticCurvePublicKey) and isinstance(key.curve, ec.SECP256R1)
+        )):
             raise ValueError()
         return key
     except (ValueError, TypeError, UnicodeError):
-        raise ValidationError({'public_key': 'An Ed25519 PEM public key is required.'})
+        raise ValidationError({'public_key': 'An Ed25519 or P-256 PEM public key is required.'})
+
+
+def verify_signature(key, signature, message):
+    if isinstance(key, Ed25519PublicKey):
+        key.verify(signature, message)
+    else:
+        # Android SHA256withECDSA produces ASN.1 DER, not JOSE raw r||s.
+        key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
 
 
 def request_message(request, challenge):
@@ -51,7 +62,7 @@ def verify_request_device(request, *, primary=False, purpose='WRITE', allow_pend
     if primary and (not device.is_primary_writer or device.write_generation != request.user.exploitation.write_generation):
         raise PermissionDenied('PRIMARY_DEVICE_REQUIRED')
     try:
-        load_public_key(device.public_key).verify(signature, request_message(request, challenge))
+        verify_signature(load_public_key(device.public_key), signature, request_message(request, challenge))
     except (InvalidSignature, ValueError):
         raise PermissionDenied('DEVICE_PROOF_INVALID')
     challenge.consumed_at = timezone.now()
