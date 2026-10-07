@@ -55,9 +55,9 @@ def export_all_statistics(request):
     add_sheet(workbook, "Exploitations",
         ["ID", "Nom", "Propriétaire", "Utilisateurs", "Lots", "Clients", "CA FCFA", "Paiements FCFA", "Solde clients FCFA", "Dépenses FCFA", "Création"],
         ((farm.id, farm.nom, farm.proprietaire.username, farm.users.count(), farm.lots.count(), farm.clients.count(),
-          float(Vente.objects.filter(lot__exploitation=farm).aggregate(v=Sum("montant_total"))["v"] or 0),
-          float(Payment.objects.filter(exploitation=farm).aggregate(v=Sum("montant"))["v"] or 0),
-          float(Vente.objects.filter(lot__exploitation=farm).aggregate(v=Sum("montant_total"))["v"] or 0) - float(Payment.objects.filter(exploitation=farm).aggregate(v=Sum("montant"))["v"] or 0),
+          Vente.objects.filter(lot__exploitation=farm).aggregate(v=Sum("montant_total"))["v"] or 0,
+          Payment.objects.filter(exploitation=farm).aggregate(v=Sum("montant"))["v"] or 0,
+          (Vente.objects.filter(lot__exploitation=farm).aggregate(v=Sum("montant_total"))["v"] or 0) - (Payment.objects.filter(exploitation=farm).aggregate(v=Sum("montant"))["v"] or 0),
           float(Depense.objects.filter(lot__exploitation=farm).aggregate(v=Sum("montant"))["v"] or 0), date_value(farm.date_creation))
          for farm in Exploitation.objects.select_related("proprietaire").all()))
 
@@ -87,13 +87,13 @@ def export_all_statistics(request):
 
     add_sheet(workbook, "Clients", ["ID", "Nom", "Téléphone", "Pays", "Ville", "Exploitation", "Facturé", "Payé", "Solde"],
         ((x.id, x.nom, x.telephone, x.pays, x.ville, text(x.exploitation),
-          float(x.ventes.aggregate(v=Sum("montant_total"))["v"] or 0), float(x.payments.aggregate(v=Sum("montant"))["v"] or 0),
-          float(x.ventes.aggregate(v=Sum("montant_total"))["v"] or 0) - float(x.payments.aggregate(v=Sum("montant"))["v"] or 0))
+          x.ventes.aggregate(v=Sum("montant_total"))["v"] or 0, x.payments.aggregate(v=Sum("montant"))["v"] or 0,
+          (x.ventes.aggregate(v=Sum("montant_total"))["v"] or 0) - (x.payments.aggregate(v=Sum("montant"))["v"] or 0))
          for x in Client.objects.select_related("exploitation").all()))
 
     add_sheet(workbook, "Paiements", ["ID", "Date", "Exploitation", "Client", "Montant", "Montant lettré", "Non affecté", "Note", "Création"],
         ((x.id, x.date, x.exploitation.nom, x.client.nom, x.montant,
-          float(x.lettrages.aggregate(v=Sum("montant"))["v"] or 0), x.montant - float(x.lettrages.aggregate(v=Sum("montant"))["v"] or 0), text(x.note), date_value(x.created_at))
+          x.lettrages.aggregate(v=Sum("montant"))["v"] or 0, x.montant - (x.lettrages.aggregate(v=Sum("montant"))["v"] or 0), text(x.note), date_value(x.created_at))
          for x in Payment.objects.select_related("exploitation", "client").all()))
 
     add_sheet(workbook, "Lettrages", ["ID", "Date", "Exploitation", "Client", "Vente ID", "Paiement ID", "Montant affecté"],

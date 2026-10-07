@@ -1,8 +1,10 @@
-from django.db import models
+from django.db import models, transaction
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.utils.timezone import now
 from django.db.models import Sum
+import uuid
+from .audit import AuditedModel, AuditedQuerySet
 
 
 # ===============================
@@ -18,8 +20,13 @@ class User(AbstractUser):
         related_name='users'
     )
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
         is_new = self.pk is None
+        if not is_new:
+            previous = type(self).objects.filter(pk=self.pk).values_list('exploitation_id', flat=True).first()
+            if previous != self.exploitation_id:
+                raise ValidationError('Le transfert d’exploitation nécessite un parcours dédié.')
         super().save(*args, **kwargs)
 
         if is_new and not self.exploitation:
@@ -30,6 +37,14 @@ class User(AbstractUser):
             self.exploitation = exploitation
             super().save(update_fields=["exploitation"])
 
+        if is_new and self.exploitation_id:
+            role = 'OWNER' if self.exploitation.proprietaire_id == self.pk else 'OPERATEUR'
+            from .audit import ActorContext, audit_scope
+            with audit_scope(ActorContext(self.pk, self.exploitation_id)):
+                ExploitationMembership.objects.get_or_create(
+                    user=self, exploitation=self.exploitation, defaults={'role': role},
+                )
+
 
 # ===============================
 # EXPLOITATION
@@ -39,6 +54,9 @@ class Exploitation(models.Model):
     nom = models.CharField(max_length=100)
     proprietaire = models.ForeignKey(User, on_delete=models.CASCADE, related_name='owned_exploitations')
     date_creation = models.DateTimeField(auto_now_add=True)
+    offline_policy_enabled = models.BooleanField(default=False)
+    write_generation = models.PositiveIntegerField(default=1)
+    business_revision = models.PositiveBigIntegerField(default=0)
 
     def __str__(self):
         return self.nom
@@ -48,7 +66,7 @@ class Exploitation(models.Model):
 # ESPECE
 # ===============================
 
-class Espece(models.Model):
+class Espece(AuditedModel):
     nom = models.CharField(max_length=100)
 
     exploitation = models.ForeignKey(
@@ -67,7 +85,7 @@ class Espece(models.Model):
 # QUERYSET (multi-tenant)
 # ===============================
 
-class TenantQuerySet(models.QuerySet):
+class TenantQuerySet(AuditedQuerySet):
     def for_user(self, user):
         return self.filter(lot__exploitation=user.exploitation)
 
@@ -76,7 +94,7 @@ class TenantQuerySet(models.QuerySet):
 # LOT
 # ===============================
 
-class Lot(models.Model):
+class Lot(AuditedModel):
     TYPE_PRODUCTION_CHOICES = [
         ('CHAIR', 'Élevage de chair'),
         ('OEUFS', 'Production d’œufs'),
@@ -140,7 +158,7 @@ class Lot(models.Model):
 # MOUVEMENT
 # ===============================
 
-class Mouvement(models.Model):
+class Mouvement(AuditedModel):
 
     objects = TenantQuerySet.as_manager()
 
@@ -199,7 +217,8 @@ class Mouvement(models.Model):
 # VENTE
 # ===============================
 
-class Vente(models.Model):
+class Vente(AuditedModel):
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
 
     objects = TenantQuerySet.as_manager()
 
@@ -223,7 +242,7 @@ class Vente(models.Model):
 
     @property
     def reste_a_payer(self):
-        return float(self.montant_total) - float(self.montant_paye)
+        return self.montant_total - self.montant_paye
 
     @property
     def statut(self):
@@ -239,7 +258,7 @@ class Vente(models.Model):
 # CATEGORIE DEPENSE
 # ===============================
 
-class CategorieDepense(models.Model):
+class CategorieDepense(AuditedModel):
     nom = models.CharField(max_length=50)
     exploitation = models.ForeignKey(Exploitation, on_delete=models.CASCADE, related_name='categories_depense')
 
@@ -251,7 +270,8 @@ class CategorieDepense(models.Model):
 # DEPENSE
 # ===============================
 
-class Depense(models.Model):
+class Depense(AuditedModel):
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
 
     objects = TenantQuerySet.as_manager()
 
@@ -272,7 +292,7 @@ class Depense(models.Model):
 # ACHAT
 # ===============================
 
-class Achat(models.Model):
+class Achat(AuditedModel):
     exploitation = models.ForeignKey("Exploitation", on_delete=models.CASCADE)
     lot = models.ForeignKey("Lot", on_delete=models.CASCADE, related_name="achats")
 
@@ -296,13 +316,28 @@ class Achat(models.Model):
 # TASK
 # ===============================
 
-class Task(models.Model):
+class Task(AuditedModel):
     exploitation = models.ForeignKey(Exploitation, on_delete=models.CASCADE, related_name="tasks")
 
     title = models.CharField(max_length=255)
     date = models.DateField()
 
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='created_tasks')
+    assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name='assigned_tasks')
+    description = models.TextField(blank=True, default='')
+    priority = models.CharField(max_length=10, default='NORMAL',
+                                choices=[('LOW', 'Low'), ('NORMAL', 'Normal'), ('HIGH', 'High')])
+    status = models.CharField(max_length=20, default='TODO', choices=[
+        ('TODO', 'To do'), ('IN_PROGRESS', 'In progress'), ('DONE', 'Done'), ('CANCELLED', 'Cancelled')])
+    completed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name='completed_tasks')
+    completed_at = models.DateTimeField(null=True, blank=True)
+    report = models.TextField(blank=True, default='')
+    version = models.PositiveIntegerField(default=1)
 
     def __str__(self):
         return self.title
@@ -312,7 +347,8 @@ class Task(models.Model):
 # CLIENT
 # ===============================
 
-class Client(models.Model):
+class Client(AuditedModel):
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     nom = models.CharField(max_length=255)
     telephone = models.CharField(max_length=20, blank=True)
     pays = models.CharField(max_length=2, blank=True, default="")
@@ -333,9 +369,10 @@ class Client(models.Model):
 # PAYMENT
 # ===============================
 
-class Payment(models.Model):
+class Payment(AuditedModel):
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="payments")
-    montant = models.FloatField()
+    montant = models.DecimalField(max_digits=12, decimal_places=2)
     date = models.DateField()
     note = models.TextField(blank=True, null=True)
 
@@ -351,11 +388,12 @@ class Payment(models.Model):
 # LETTRAGE
 # ===============================
 
-class Lettrage(models.Model):
+class Lettrage(AuditedModel):
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     vente = models.ForeignKey("Vente", on_delete=models.CASCADE, related_name="lettrages")
     payment = models.ForeignKey("Payment", on_delete=models.CASCADE, related_name="lettrages")
 
-    montant = models.FloatField()
+    montant = models.DecimalField(max_digits=12, decimal_places=2)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -367,7 +405,7 @@ class Lettrage(models.Model):
 # PRODUCTION D'ŒUFS
 # ===============================
 
-class CollecteOeufs(models.Model):
+class CollecteOeufs(AuditedModel):
     exploitation = models.ForeignKey(
         Exploitation,
         on_delete=models.CASCADE,
@@ -427,7 +465,7 @@ class CollecteOeufs(models.Model):
         return f"Collecte {self.lot} - {self.nombre_collecte} œufs"
 
 
-class MouvementOeufs(models.Model):
+class MouvementOeufs(AuditedModel):
     TYPE_CHOICES = [
         ('PRODUCTION', 'Production'),
         ('VENTE', 'Vente'),
@@ -508,7 +546,7 @@ class MouvementOeufs(models.Model):
         return f"{self.type_mouvement} - {self.quantite_signee} œufs"
 
 
-class AffectationMouvementOeufs(models.Model):
+class AffectationMouvementOeufs(AuditedModel):
     """Origine déclarée d'une sortie d'œufs, sans modifier le mouvement comptable."""
 
     mouvement = models.ForeignKey(
@@ -546,7 +584,8 @@ class AffectationMouvementOeufs(models.Model):
                 raise ValidationError("Seule une sortie du stock peut être affectée à une collecte.")
 
 
-class VenteOeufs(models.Model):
+class VenteOeufs(AuditedModel):
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     CONDITIONNEMENT_CHOICES = [
         ('UNITE', 'Unité'),
         ('DOUZAINE', 'Douzaine'),
@@ -598,7 +637,7 @@ class VenteOeufs(models.Model):
         return f"Vente d'œufs #{self.vente_id} - {self.nombre_oeufs} œufs"
 
 
-class ConsommationAliment(models.Model):
+class ConsommationAliment(AuditedModel):
     exploitation = models.ForeignKey(
         Exploitation,
         on_delete=models.CASCADE,
@@ -660,7 +699,7 @@ class ConsommationAliment(models.Model):
         return f"{self.lot} - {self.quantite_kg} kg le {self.date}"
 
 
-class PeseeProduction(models.Model):
+class PeseeProduction(AuditedModel):
     """Pondération d'un échantillon d'animaux d'un lot de production."""
 
     exploitation = models.ForeignKey(
@@ -749,3 +788,10 @@ class PasswordResetCode(models.Model):
     @property
     def is_valid(self):
         return self.used_at is None and self.expires_at > now()
+
+
+from .foundation_models import (  # noqa: E402 - string relations resolve after model loading
+    ExploitationMembership, DeviceRegistration, DeviceChallenge,
+    OfflineAuthorization, AuditEvent,
+)
+from .terrain_models import DeviceTransportChallenge, TerrainSubmission, TerrainOutcome, TerrainEntityMapping, EncaissementTerrain  # noqa: E402
