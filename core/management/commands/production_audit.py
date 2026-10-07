@@ -6,11 +6,12 @@ import os
 from pathlib import Path
 
 from django.conf import settings
+from django.apps import apps
 from django.core.management.base import BaseCommand, CommandError
-from django.db import connection, transaction
+from django.db import connection, transaction, models
 
 
-def table_snapshot(cursor, table, columns=None, through_id=None):
+def table_snapshot(cursor, table, columns=None, through_id=None, historical_ids=None):
     quote = connection.ops.quote_name
     available = [field.name for field in connection.introspection.get_table_description(cursor, table)]
     columns = columns or [name for name in available if name not in {"last_login", "last_activity"}]
@@ -18,21 +19,43 @@ def table_snapshot(cursor, table, columns=None, through_id=None):
         raise CommandError(f"Historical columns missing from {table}")
     cursor.execute(f"SELECT COUNT(*) FROM {quote(table)}")
     total_count = cursor.fetchone()[0]
-    if "id" in available and through_id is None:
+    uuid_pk = any(model._meta.db_table == table and isinstance(model._meta.pk, models.UUIDField)
+                  for model in apps.get_models(include_auto_created=True))
+    if uuid_pk:
+        # UUIDs are neither sequential nor supported by PostgreSQL MAX(uuid).
+        # Keep exactly the original identities so later, smaller UUIDs are excluded.
+        if through_id is not None:
+            raise CommandError(f"UUID baseline for {table} needs explicit historical_ids; recreate it explicitly")
+        if historical_ids is None:
+            cursor.execute(f"SELECT {quote('id')} FROM {quote(table)} ORDER BY {quote('id')}")
+            historical_ids = [str(row[0]) for row in cursor.fetchall()]
+    elif "id" in available and through_id is None:
         cursor.execute(f"SELECT MAX({quote('id')}) FROM {quote(table)}")
         through_id = cursor.fetchone()[0] or 0
     selected = ", ".join(quote(name) for name in columns)
     order = quote("id") if "id" in available else selected
     where = f" WHERE {quote('id')} <= %s" if through_id is not None else ""
-    cursor.execute(f"SELECT {selected} FROM {quote(table)}{where} ORDER BY {order}", [through_id] if where else [])
+    if uuid_pk:
+        # Bound each query for both PostgreSQL and SQLite parameter limits.
+        queries = [(f" WHERE {quote('id')} IN ({', '.join(['%s'] * len(batch))})", batch)
+                   for start in range(0, len(historical_ids), 500)
+                   if (batch := historical_ids[start:start + 500])]
+        queries = queries or [(" WHERE 1=0", [])]
+    else:
+        queries = [(where, [through_id] if where else [])]
     digest = hashlib.sha256()
     count = 0
-    while rows := cursor.fetchmany(500):
-        for row in rows:
-            digest.update(json.dumps(row, default=str, ensure_ascii=False).encode("utf-8"))
-            digest.update(b"\n")
-            count += 1
-    return {"columns": columns, "count": count, "sha256": digest.hexdigest(), "through_id": through_id, "total_count": total_count}
+    for clause, params in queries:
+        cursor.execute(f"SELECT {selected} FROM {quote(table)}{clause} ORDER BY {order}", params)
+        while rows := cursor.fetchmany(500):
+            for row in rows:
+                digest.update(json.dumps(row, default=str, ensure_ascii=False).encode("utf-8"))
+                digest.update(b"\n")
+                count += 1
+    result = {"columns": columns, "count": count, "sha256": digest.hexdigest(), "through_id": through_id, "total_count": total_count}
+    if uuid_pk:
+        result['historical_ids'] = historical_ids
+    return result
 
 
 def database_snapshot(baseline=None):
@@ -54,6 +77,7 @@ def database_snapshot(baseline=None):
                 cursor, table,
                 baseline["tables"][table]["columns"] if baseline else None,
                 baseline["tables"][table]["through_id"] if baseline else None,
+                baseline["tables"][table].get("historical_ids") if baseline else None,
             )
             for table in wanted
         }

@@ -1,0 +1,89 @@
+"""Read-only, bounded bootstrap pages for the encrypted farm cache."""
+from django.db.models import Q, Sum, Value, IntegerField, OuterRef, Subquery
+from django.db.models.functions import Coalesce
+from django.utils import timezone
+from django.db import transaction
+from rest_framework import serializers
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .models import Lot, Client, Espece, Task, Exploitation, CategorieDepense, MouvementOeufs, Vente, TerrainStockAdjustment
+from .permissions import require_member
+from .serializers import LotSerializer, ClientSerializer
+from .task_views import AgendaSerializer
+
+
+class CachePageInput(serializers.Serializer):
+    collection = serializers.ChoiceField(choices=['lots', 'clients', 'species', 'tasks', 'expense_categories', 'sales'])
+    after = serializers.IntegerField(min_value=0, max_value=9223372036854775807, default=0)
+    limit = serializers.IntegerField(min_value=1, max_value=200, default=50)
+
+
+class CacheLotSerializer(LotSerializer):
+    stock = serializers.IntegerField(source='confirmed_stock', read_only=True)
+    stock_oeufs = serializers.IntegerField(source='confirmed_egg_stock', read_only=True)
+
+
+def lot_stock_queryset(farm_id):
+    eggs = MouvementOeufs.objects.filter(lot_id=OuterRef('pk'), exploitation_id=farm_id).values('lot_id').annotate(
+        total=Sum('quantite_signee')).values('total')[:1]
+    def compensation(kind):
+        return TerrainStockAdjustment.objects.filter(lot_id=OuterRef('pk'), exploitation_id=farm_id,
+            kind=kind).values('lot_id').annotate(total=Sum('signed_quantity')).values('total')[:1]
+    return Lot.objects.filter(exploitation_id=farm_id).select_related('espece').annotate(
+        confirmed_stock=Coalesce(Sum('mouvements__quantite_signee'),Value(0),output_field=IntegerField())+
+            Coalesce(Subquery(compensation('ANIMAL'),output_field=IntegerField()),Value(0)),
+        confirmed_egg_stock=Coalesce(Subquery(eggs,output_field=IntegerField()),Value(0))+
+            Coalesce(Subquery(compensation('EGG'),output_field=IntegerField()),Value(0)))
+
+
+@api_view(['GET'])
+@transaction.atomic
+def cache_page(request):
+    member = require_member(request.user)
+    inputs = CachePageInput(data=request.query_params)
+    inputs.is_valid(raise_exception=True)
+    collection, after, limit = (inputs.validated_data[key] for key in ('collection', 'after', 'limit'))
+    farm = Exploitation.objects.select_for_update().get(pk=member.exploitation_id)
+    models = {'lots': Lot, 'clients': Client, 'species': Espece, 'tasks': Task, 'expense_categories':CategorieDepense, 'sales':Vente}
+    tenant = 'lot__exploitation_id' if collection == 'sales' else 'exploitation_id'
+    queryset = models[collection].objects.filter(**{tenant:member.exploitation_id}, pk__gt=after)
+    if collection == 'sales':
+        queryset = queryset.select_related('detail_oeufs').annotate(allocated=Sum('lettrages__montant',filter=Q(lettrages__voided_at__isnull=True)))
+    if collection == 'tasks' and member.role == 'OPERATEUR':
+        queryset = queryset.filter(Q(assigned_to_id=request.user.pk) | Q(assigned_to__isnull=True))
+    if collection == 'lots':
+        queryset = lot_stock_queryset(member.exploitation_id).filter(pk__gt=after)
+    rows = list(queryset.order_by('pk')[:limit + 1])
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    if collection == 'sales':
+        data = []
+        for row in rows:
+            eggs = getattr(row, 'detail_oeufs', None)
+            data.append({'id':row.pk, 'entity_type':'VENTE_OEUFS' if eggs else 'VENTE_ANIMAUX',
+                'reference_id':eggs.pk if eggs else row.pk, 'client_id':row.client_id,'lot_id':row.lot_id,
+                'date':row.date.isoformat(),'quantite':eggs.nombre_oeufs if eggs else row.quantite,
+                'montant_total':format(row.montant_total,'.2f'),'reste_a_payer':format(row.montant_total-(row.allocated or 0),'.2f'),
+                'confirmed_business_revision':farm.business_revision})
+    elif collection in ('species','expense_categories'):
+        data = [{'id': row.pk, 'nom': row.nom, 'exploitation': row.exploitation_id} for row in rows]
+    else:
+        serializer = {'lots': CacheLotSerializer, 'clients': ClientSerializer, 'tasks': AgendaSerializer}[collection]
+        data = serializer(rows, many=True).data
+    if collection == 'lots':
+        for item in data:
+            item['confirmed_business_revision'] = farm.business_revision
+    return Response({'collection': collection, 'results': data,
+        'next_cursor': rows[-1].pk if has_more else None, 'server_time': timezone.now(),
+        'confirmed_business_revision':farm.business_revision})
+
+
+def stock_snapshots(farm_id, ids):
+    if not ids:
+        return []
+    revision = Exploitation.objects.values_list('business_revision',flat=True).get(pk=farm_id)
+    lots = lot_stock_queryset(farm_id).filter(pk__in=ids)
+    data = CacheLotSerializer(lots,many=True).data
+    for item in data:
+        item['confirmed_business_revision'] = revision
+    return data
