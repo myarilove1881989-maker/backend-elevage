@@ -195,3 +195,40 @@ Conditionnement composé existant préservé : alvéoles de 30, supplément
 sont classés à rapprocher avant toute écriture métier, sans boucle de retry.
 18 tests ciblés serveur passent sous SQLite avec 3 skips PG ; nouvelle
 régression complète et CI mobile requises pour ce dernier complément.
+
+## Clôture 2F — 7 octobre 2026
+
+Sources validées : backend `2dbb9df470c37efa8668582ce342bff677cdf5cd`,
+mobile `e724438b0ba994ad8dd8b983cb241cd44eebb0ff`.
+Ventes animales, ventes d’œufs (dont conditionnement composé), FIFO limité
+à la date/heure métier, survente avec alerte forte et motif requis, file
+client → vente → encaissement et montants exacts sont inclus.
+Le fait physique d’un encaissement reste intégral, les affectations et le
+reliquat sont séparés, et son origine est protégée contre UPDATE/DELETE SQL.
+
+SQLite : 235 tests, 226 réussis et 9 skips PostgreSQL. PostgreSQL 17.11
+local isolé : 235 tests, 233 réussis et 2 skips SQLite. Migrations jusqu’à
+0024 et token_blacklist, check et makemigrations --check réussis. Concurrence
+réelle des ventes et des encaissements validée ; audit et origine de cash
+append-only vérifiés en SQL direct. Le cluster temporaire est arrêté.
+
+CI mobile `37651199950` : 168 tests réussis, analyse sans erreur ni warning
+(61 infos conservées), lockfile strict, Web release, APK debug et ARM64
+release (28,4 MB), preuve de fichier chiffré. Android API 24 réel : parcours
+terminé en 25 secondes, six opérations propres de Jean, achat 3 × 13,01,
+vente puis encaissement par UUID, survente refusée sans motif puis conservée
+avec motif, auteur original préservé et verrouillage PIN. Keystore dans
+deux processus et cache illisible par SQLite ordinaire passent également.
+
+Les échecs antérieurs restent documentés. Le run natif `37645579781` est
+REFUSÉ malgré son statut GitHub nominal : expiration réelle de Flutter.
+Le nouveau garde exige rapport terminé et preuve dans les logs du processus.
+Le run `37649583574` a ensuite correctement échoué sur un champ masqué et
+un débordement de libellé sur petit écran ; listes adaptatives et défilement
+centré corrigent ces défauts. Aucun délai augmenté ni assertion masquée.
+
+Les échanges HTTP du parcours natif restent synthétiques. Le parcours
+métier natif avec serveur réel et durcissement 2I reste requis avant V1.
+Phase 2F validée ; corrections, conflits et supervision démarrent ensuite
+en 2G. PR backend #9 et mobile #11 restent en brouillon. Aucun merge,
+déploiement, test de production ou activation de politique réelle.
