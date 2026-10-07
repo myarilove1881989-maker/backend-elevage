@@ -283,3 +283,43 @@ le backend métier réel demeure requis en phase 2I avant intégration V1.
 
 Phase 2G validée. PR backend #10 et mobile #12 restent en brouillon.
 Aucun merge, déploiement, test de production ni activation de politique réelle.
+
+## Clôture 2H — 7 octobre 2026
+
+Source mobile validée : `43ce0ee484c0af08d9de59e1bd38b9e1bca71243`, CI `37690340380`.
+Un moteur partagé par tablette transmet tous les auteurs sans dépendre du PIN
+ou du JWT personnel : démarrage/reprise, retour réseau, bouton
+« Synchroniser maintenant », intervalle de cinq minutes au premier plan.
+Un seul envoi simultané ; cooldown de quinze secondes ; timers et observateurs
+annulés à la pause. Une réponse tardive ne remplace pas une perte réseau récente.
+Dernière réussite UTC, attente/conflits/blocages partagés, erreur générique sans
+secret. Drift schéma 7 ajoute le suivi de synchronisation sans réécrire les
+déclarations originales, auteurs, grants ou cache chiffré.
+
+188 tests Flutter passés ; analyse : 62 infos, zéro erreur et avertissement.
+Preuves de chiffrement, Web release, APK debug et ARM64 release 28.6 MB
+réussis. Android API24 : parcours Jean, supervision Owner et synchronisation
+partagée réussis en 26s. Six déclarations de Jean et une de Paul sont reçues,
+signées via Keystore, sans bearer et avec PIN/JWT fermés ; l'action du vrai
+bouton manuel et le canal réseau Android sont exercés. Deux processus de test
+Keystore distincts passent ; le cache est illisible par SQLite ordinaire.
+
+Échecs intermédiaires conservés : import Flutter dans la preuve Dart corrigé
+par séparation du contrat de stockage, archive SDK émulateur invalide,
+défilement des fixtures, puis assertions HTTP exécutées pendant tester.pump.
+Ces dernières sont collectées dans le callback et assertées après la réponse,
+avec les mêmes contrôles de signature, absence de JWT, sept reçus et auteurs.
+Le probe direct de diagnostic n'a pas satisfait le garde et a été retiré.
+Aucun délai augmenté ni assertion supprimée pour obtenir le succès.
+
+Le code serveur reste celui de 2G : backend
+`e9c4ac811af6f2950b05b37cdda14ecdcc10591f` (modifications ultérieures : docs).
+La régression Django est celle de 2G, non réexécutée en 2H : SQLite 269 tests
+(256 passés, 13 PostgreSQL ignorés), PostgreSQL17.11 isolé 269 tests
+(267 passés, 2 SQLite ignorés), migrations jusqu'à 0031 et token_blacklist,
+SQL append-only et concurrence réelle. Le serveur temporaire est arrêté.
+
+Les échanges HTTP natifs de 2H restent simulés : le parcours avec backend
+métier réel, crashes, mise à jour APK et récupération explicite après révocation
+demeurent requis en 2I. Phase 2H validée ; aucune fusion, aucun déploiement,
+aucune base de production utilisée et aucune activation de politique réelle.
