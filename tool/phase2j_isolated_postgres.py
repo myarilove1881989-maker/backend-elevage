@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -45,7 +46,9 @@ def main():
         ENV['DATABASE_URL'] = f'postgresql://phase2j_test@127.0.0.1:{PORT}/phase2j_source_test'
         run([sys.executable, 'manage.py', 'migrate', '--noinput'], 'migrate')
         run([sys.executable, 'manage.py', 'makemigrations', '--check', '--dry-run'], 'migration-drift')
-        run([sys.executable, 'manage.py', 'test', '--noinput'], 'postgres-tests')
+        tests_executed = '--restore-only' not in sys.argv
+        if tests_executed:
+            run([sys.executable, 'manage.py', 'test', '--noinput'], 'postgres-tests')
         sql('phase2j_source_test', "CREATE TABLE phase2j_synthetic_probe (id integer primary key, declaration_uuid uuid unique, amount numeric(12,2)); INSERT INTO phase2j_synthetic_probe VALUES (1,'11111111-2222-4333-8444-555555555555',123.45)", 'synthetic-probe')
         dump = PROOF/'synthetic.dump'
         run([BIN/'pg_dump.exe', '-Fc', '--no-owner', '--no-acl', '-d', 'phase2j_source_test', '-f', dump], 'dump')
@@ -61,14 +64,30 @@ def main():
         for name, query in queries.items():
             before = sql('phase2j_source_test', query, 'source-'+name)
             after = sql('phase2j_restore_test', query, 'restored-'+name)
-            assert before == after, f'Restore mismatch: {name}'
+            if name == 'constraints' and before != after:
+                # PostgreSQL reparses the varchar[] -> text[] cast in this CHECK.
+                # Keep every other definition exact; validate this one semantically.
+                prefix = 'terrain_business_status_valid:'
+                assert [v for v in before.splitlines() if not v.startswith(prefix)] == [v for v in after.splitlines() if not v.startswith(prefix)]
+                expression_query = "SELECT pg_get_expr(conbin,conrelid) FROM pg_constraint WHERE conname='terrain_business_status_valid' AND convalidated AND conrelid='core_terrainoutcome'::regclass"
+                expressions = [sql(db, expression_query, 'status-expression-'+db) for db in ('phase2j_source_test','phase2j_restore_test')]
+                assert all(expressions)
+                valid = ['UNREVIEWED','WAITING_DEPENDENCY','CONFIRMED','NEEDS_RECONCILIATION','NOT_APPLIED','SUPERSEDED']
+                for i, status in enumerate(valid + ['INVALID', '']):
+                    for j, expression in enumerate(expressions):
+                        evaluated = re.sub(r'\bbusiness_status\b', "'" + status + "'", expression)
+                        result = sql(('phase2j_source_test','phase2j_restore_test')[j], 'SELECT '+evaluated, f'status-probe-{i}-{j}')
+                        assert result == ('t' if status in valid else 'f')
+                checks['status_check_semantics'] = True
+            else:
+                assert before == after, f'Restore mismatch: {name}'
             checks[name] = True
         for action in ('UPDATE', 'DELETE'):
             statement = ('UPDATE core_auditevent SET action=action' if action == 'UPDATE' else 'DELETE FROM core_auditevent')
             result = subprocess.run([str(BIN/'psql.exe'), '-X', '-v', 'ON_ERROR_STOP=1', '-d', 'phase2j_restore_test', '-c', statement], env=ENV, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
             assert result.returncode != 0 and 'append-only' in result.stderr
             checks['audit_rejects_'+action.lower()] = True
-        (PROOF/'restore-result.json').write_text(json.dumps({'production_data': False,
+        (PROOF/'restore-result.json').write_text(json.dumps({'production_data': False, 'tests_executed_in_this_run': tests_executed,
             'host': '127.0.0.1', 'port': int(PORT), 'postgres_version': sql('postgres','SHOW server_version','version'),
             'dump_sha256': hashlib.sha256(dump.read_bytes()).hexdigest(), 'checks': checks}, indent=2)+'\n')
         print('PHASE2J_SYNTHETIC_RESTORE_PASSED')
