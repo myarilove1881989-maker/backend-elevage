@@ -2,7 +2,11 @@
 
 ## Cible Render à identifier avant toute opération
 
-Render authentifié ; espaces disponibles : `db-elevage` (tea-d804dkrtqb8s73fr2mp0) et `My Workspace` (tea-d7rn0628qa3s73dkf780). Aucun sélectionné. Attendre sélection explicite demandée à l’utilisateur. Ne pas déduire le service et la base d’un nom d’espace ou de l’URL mobile par défaut.
+Render authentifié ; audit des deux espaces demandé par l’utilisateur. L’URL API mobile correspond à `backend-elevage` dans `My Workspace` (tea-d7rn0628qa3s73dkf780), service `srv-d7sdmucm0tmc73cvc6u0`, main, virginia, free, SHA live90ce6fe3bd1272c3603776eb22d20bd16455b4b7. Base candidate du même environnement Production : `elevage-db`, IDdpg-da2spvv40ujc73avuefg-a, nom logique elevage, version SQL18.4, basic_256mb/5GB, sans HA/replica. Liaison DATABASE_URL non confirmée : lecture du secret refusée par le contrôle automatique. Ne pas la considérer démontrée par le seul environnement commun.
+
+Migrations réelles de cette base : core0001–0015 seulement, pas de token_blacklist ni triggers applicatifs. PITR3jours et un export du5octobre2026 à22h27 Europe/Paris visibles, rétention exports au moins7jours ; archive non téléchargée et restauration non testée. Version locale18.1 distincte de18.4 réelle : nouveau contrôle18.4 requis.
+
+Le backend principal et le site mobile (srv-da3hpa9t0dsc73fmrqg0/master) auto-déploient sur commit. Le backend applique migrate au démarrage. L’autre espace `db-elevage` (tea-d804dkrtqb8s73fr2mp0) contient backend-elevage-lczf (srv-d804prjrjlhs73a0m7qg/main), même SHA live, migrations au démarrage et autoDeploy actif, sans Postgres listé. Aucun push/merge/redémarrage/déploiement n’est permis par cette phase. Audit en lecture seule, aucun secret recopié.
 
 Inventaire après sélection : service ID, URL, dépôt, branche, SHA réellement déployé, région, autoDeploy, commandes build/start/preDeploy ; base ID, nom logique, version PostgreSQL, région, plan, sauvegardes/PITR et rétention effectivement disponibles. Confirmer la liaison service→base par référence Render/Dashboard, sans afficher DATABASE_URL. Le connecteur ne proposant pas de lecture des variables, une confirmation Dashboard peut être nécessaire. Ne jamais pousser sur une branche surveillée avant identification de l’auto-déploiement.
 
