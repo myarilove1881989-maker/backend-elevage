@@ -179,7 +179,7 @@ def challenge(request):
             raise ValidationError('Appareil en attente requis.')
     elif device.status != 'ACTIVE' or not device.is_primary_writer:
         raise PermissionDenied('Appareil principal actif requis.')
-    # No secret challenge: possession is proven by Ed25519 signature, not by UUID.
+    # Possession is proven by an Ed25519 or Android Keystore P-256 signature.
     obj = DeviceChallenge.objects.create(device=device, user=request.user, purpose=purpose,
                                          expires_at=timezone.now() + timedelta(minutes=5))
     return Response({'id': str(obj.pk), 'device_id': device.pk, 'user_id': request.user.pk,
