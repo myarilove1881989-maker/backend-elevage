@@ -9,6 +9,8 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
+from datetime import timedelta
 from decimal import Decimal
 from urllib.parse import urlsplit
 
@@ -97,6 +99,39 @@ def main():
     assert ExploitationMembership.objects.filter(role='OWNER').count()==20
     assert ExploitationMembership.objects.filter(role='OPERATEUR').count()==40
     assert not Exploitation.objects.filter(offline_policy_enabled=True).exists()
+    # Structural recovery fixtures, never passed off as API/enrollment validation.
+    # The native CI journeys separately exercise receipt through the real API.
+    from core.models import (DeviceRegistration,OfflineAuthorization,TerrainSubmission,
+        TerrainOutcome,TerrainDecision,TerrainStockAdjustment,EncaissementTerrain,Lot)
+    from django.utils import timezone
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    for farm in Exploitation.objects.order_by('pk'):
+        member=ExploitationMembership.objects.get(exploitation=farm,role='OWNER')
+        public_key=ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(
+            serialization.Encoding.PEM,serialization.PublicFormat.SubjectPublicKeyInfo).decode('ascii')
+        device=DeviceRegistration.objects.create(exploitation=farm,installation_uuid=uuid.uuid4(),
+            display_name='SYNTHETIC RESTORE ONLY',public_key=public_key,status='PENDING')
+        now=timezone.now()
+        grant=OfflineAuthorization.objects.create(membership=member,device=device,
+            rights_version=1,write_generation=1,expires_at=now+timedelta(days=3))
+        payment=Payment.objects.filter(exploitation=farm).first()
+        payload={'synthetic':True,'montant':str(payment.montant)}
+        submission=TerrainSubmission.objects.create(exploitation=farm,client_operation_id=uuid.uuid4(),
+            local_sequence=1,author_user_id=member.user_id,author_membership_id=member.pk,
+            device=device,device_generation=1,offline_authorization=grant,entity_type='ENCAISSEMENT',
+            operation_type='CREATE',payload=payload,business_occurred_at=now,local_recorded_at=now,
+            declaration_digest=digest(payload))
+        TerrainOutcome.objects.create(submission=submission,business_status='NEEDS_RECONCILIATION')
+        decision=TerrainDecision.objects.create(exploitation=farm,submission=submission,
+            decision_uuid=uuid.uuid4(),decision_actor_id=member.user_id,action='SYNTHETIC_RESTORE',
+            reason='Structural synthetic restore fixture',request_digest=digest(payload))
+        TerrainStockAdjustment.objects.create(exploitation=farm,submission=submission,
+            decision_uuid=decision.decision_uuid,lot=Lot.objects.get(exploitation=farm),kind='ANIMAL',signed_quantity=1)
+        EncaissementTerrain.objects.create(exploitation=farm,submission=submission,client=payment.client,
+            created_by_id=member.user_id,payment=payment,business_occurred_at=now,
+            montant_recu=payment.montant,montant_affecte=Decimal('0.00'),
+            montant_a_rapprocher=payment.montant,mode='ESPECES',note='SYNTHETIC RESTORE ONLY')
     for i in range(10):
         AuditEvent.objects.create(exploitation_id=1,actor_user_id=1,action='SYNTHETIC_REHEARSAL',entity_type='core.payment',entity_id=str(i+1),after_data={'synthetic':True})
     env={k:v for k,v in os.environ.items() if not k.upper().startswith('PG')}
@@ -172,8 +207,16 @@ def main():
                     assert any(message in str(error) for message in ('append-only','immutable')), str(error)
                     mutation_checks[f'{table}:{action}']=error.pgcode
                 else:raise AssertionError(f'{table} accepted {action}')
+    for action,query in [('UPDATE','UPDATE core_encaissementterrain SET montant_recu=montant_recu+1'),
+                         ('DELETE','DELETE FROM core_encaissementterrain')]:
+        with restored.cursor() as cursor:
+            try:cursor.execute(query)
+            except psycopg2.Error as error:
+                assert error.pgcode=='P0001' and 'Physical cash receipt' in str(error)
+                mutation_checks[f'physical_cash:{action}']=error.pgcode
+            else:raise AssertionError(f'Physical cash accepted {action}')
     restored.close()
-    (PROOF/'postgres18-4-rehearsal.json').write_text(json.dumps({'synthetic_only':True,'postgres_version':version,'farms':20,'users':60,'payments':2000,'allocations':20,'money_preserved':True,'invalid_money_refused':rejected,'membership_bootstrap':True,'migration_seconds':durations,'sampled_locks':sorted(locks),'lock_sampling_interval_seconds':.01,'concurrent_load_test':False,'restore_checks':checks,'mutation_rejections':mutation_checks,'archive_sha256':hashlib.sha256(archive.read_bytes()).hexdigest()},indent=2)+'\n')
+    (PROOF/'postgres18-4-rehearsal.json').write_text(json.dumps({'synthetic_only':True,'postgres_version':version,'farms':20,'users':60,'payments':2000,'allocations':20,'structural_recovery_declarations':20,'physical_receipts':20,'structural_fixtures_not_api_enrollment_validation':True,'money_preserved':True,'invalid_money_refused':rejected,'membership_bootstrap':True,'migration_seconds':durations,'sampled_locks':sorted(locks),'lock_sampling_interval_seconds':.01,'concurrent_load_test':False,'restore_checks':checks,'mutation_rejections':mutation_checks,'archive_sha256':hashlib.sha256(archive.read_bytes()).hexdigest()},indent=2)+'\n')
     print('PHASE2K_POSTGRES18_4_UPGRADE_AND_RESTORE_PASSED')
 
 if __name__=='__main__':main()
