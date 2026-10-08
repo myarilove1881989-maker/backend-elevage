@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "core",
 ]
@@ -151,6 +152,8 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "AUTH_HEADER_TYPES": ("Bearer",),
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
 }
 
 # ===============================
@@ -161,6 +164,7 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     "authorization",
     "content-type",
+    "x-elevage-device", "x-elevage-challenge", "x-elevage-signature",
 ]
 
 # ===============================
@@ -188,3 +192,10 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     "DEFAULT_FROM_EMAIL",
     EMAIL_HOST_USER or "no-reply@elevage.app",
 )
+
+# Phase 2B: no private signing key is generated automatically or shared with clients.
+OFFLINE_AUTHORIZATION_DAYS = int(os.environ.get('OFFLINE_AUTHORIZATION_DAYS', '7'))
+if not 1 <= OFFLINE_AUTHORIZATION_DAYS <= 30:
+    raise ValueError('OFFLINE_AUTHORIZATION_DAYS must be between 1 and 30')
+OFFLINE_SIGNING_PRIVATE_KEY = os.environ.get('OFFLINE_SIGNING_PRIVATE_KEY', '')
+OFFLINE_SIGNING_KEY_ID = os.environ.get('OFFLINE_SIGNING_KEY_ID', 'offline-v1')

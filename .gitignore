@@ -3,3 +3,6 @@ __pycache__/
 db.sqlite3
 .env
 .venv/
+.phase2j-postgres*/
+phase2j-evidence/
+phase2k-evidence/

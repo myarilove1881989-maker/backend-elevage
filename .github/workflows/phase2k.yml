@@ -1,0 +1,47 @@
+name: Phase 2K PostgreSQL 18.4 validation
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/offline-phase-2k]
+permissions:
+  contents: read
+jobs:
+  postgres18-4:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_DB: phase2k_source_test
+          POSTGRES_USER: phase2k_test
+          POSTGRES_PASSWORD: synthetic-phase2k-password
+        ports: ['55439:5432']
+        options: >-
+          --health-cmd "pg_isready -U phase2k_test -d phase2k_source_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      SECRET_KEY: synthetic-phase2k-secret-never-production
+      DEBUG: 'true'
+      DATABASE_URL: postgresql://phase2k_test:synthetic-phase2k-password@127.0.0.1:55439/phase2k_source_test
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install backend
+        run: |
+          python -m pip install -r requirements.txt
+      - run: python manage.py check
+      - run: python tool/phase2k_postgres_rehearsal.py
+        env:
+          PHASE2K_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py test --noinput
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: phase2k-postgres18-4-synthetic-evidence
+          path: phase2k-evidence/
+          retention-days: 30
