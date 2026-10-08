@@ -3,6 +3,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -51,7 +52,8 @@ def main():
         for j in range(2): User.objects.create(username=f'synthetic_operator_{i}_{j}',password='!',exploitation=farm)
         client=Client.objects.create(nom=f'Synthetic client {i}',exploitation=farm)
         Payment.objects.bulk_create([Payment(client=client,exploitation=farm,montant=123.25+j,date='2026-10-08') for j in range(100)])
-        lot=Lot.objects.create(exploitation=farm,espece=Espece.objects.first(),nom=f'Synthetic lot {i}',date_debut='2026-10-08')
+        species=Espece.objects.create(exploitation=farm,nom=f'Synthetic species {i}')
+        lot=Lot.objects.create(exploitation=farm,espece=species,nom=f'Synthetic lot {i}',date_debut='2026-10-08')
         sale=Vente.objects.create(lot=lot,client=client,quantite=100,prix_unitaire=Decimal('100.00'),montant_total=Decimal('10000.00'))
         Lettrage.objects.create(vente=sale,payment=Payment.objects.filter(exploitation=farm).first(),montant=123.25)
     before=amounts(Payment)
@@ -131,6 +133,33 @@ def main():
         with restored.cursor() as cursor:cursor.execute(query);target=cursor.fetchall()
         assert source==target,name
         checks[name]=digest(source)
+    # Compare every table's synthetic rows, without writing their contents to logs.
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
+        tables=[row[0] for row in cursor.fetchall()]
+    for table in tables:
+        assert re.fullmatch('[a-z_0-9]+',table)
+        query=f'SELECT row_to_json(t)::text FROM {table} t ORDER BY id'
+        with connection.cursor() as cursor:cursor.execute(query);source=cursor.fetchall()
+        with restored.cursor() as cursor:cursor.execute(query);target=cursor.fetchall()
+        assert source==target,table
+        checks[f'table:{table}']=digest(source)
+    definitions="SELECT conname,pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace='public'::regnamespace ORDER BY conname,pg_get_constraintdef(oid)"
+    with connection.cursor() as cursor:cursor.execute(definitions);source=cursor.fetchall()
+    with restored.cursor() as cursor:cursor.execute(definitions);target=cursor.fetchall()
+    # PostgreSQL can reparse this single varchar[]->text[] CHECK during restore.
+    assert [row for row in source if row[0]!='terrain_business_status_valid']==[row for row in target if row[0]!='terrain_business_status_valid']
+    allowed=['UNREVIEWED','WAITING_DEPENDENCY','CONFIRMED','NEEDS_RECONCILIATION','NOT_APPLIED','SUPERSEDED']
+    for db in (connection,restored):
+        with db.cursor() as cursor:
+            cursor.execute("SELECT pg_get_expr(conbin,conrelid) FROM pg_constraint WHERE conname='terrain_business_status_valid' AND convalidated AND conrelid='core_terrainoutcome'::regclass")
+            expression=cursor.fetchone()[0]
+            for value in allowed+['INVALID','']:
+                evaluated=re.sub(r'\bbusiness_status\b',"'"+value+"'",expression)
+                cursor.execute('SELECT '+evaluated)
+                assert cursor.fetchone()[0] == (value in allowed)
+    checks['constraint_definitions_except_reparsed_status']=digest([row for row in source if row[0]!='terrain_business_status_valid'])
+    checks['status_constraint_semantics']=True
     mutation_checks={}
     for table in ('core_auditevent','core_terrainsubmission','core_terraindecision','core_terrainstockadjustment'):
         for action in ('UPDATE','DELETE'):
