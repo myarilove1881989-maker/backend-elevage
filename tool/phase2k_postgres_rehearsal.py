@@ -79,13 +79,21 @@ def main():
     env={k:v for k,v in os.environ.items() if not k.upper().startswith('PG')}
     env.update(PGHOST='127.0.0.1',PGPORT='55439',PGUSER='phase2k_test',PGPASSWORD=url.password,PGDATABASE='phase2k_source_test')
     archive=PROOF/'synthetic.dump'
-    subprocess.run(['pg_dump','-Fc','--no-owner','--no-acl','-f',str(archive)],env=env,check=True)
+    container=os.environ['PHASE2K_POSTGRES_CONTAINER']
+    assert container and all(character in '0123456789abcdef' for character in container)
+    # Use the service image's matching 18.4 clients, without installing a server.
+    with archive.open('wb') as output:
+        subprocess.run(['docker','exec',container,'pg_dump','-U','phase2k_test',
+            '-d','phase2k_source_test','-Fc','--no-owner','--no-acl'],stdout=output,check=True)
     connection.ensure_connection()
     admin=psycopg2.connect(os.environ['DATABASE_URL']);admin.autocommit=True
     with admin.cursor() as cursor:cursor.execute('CREATE DATABASE phase2k_restore_test')
     admin.close()
     env['PGDATABASE']='phase2k_restore_test'
-    subprocess.run(['pg_restore','--exit-on-error','--single-transaction','--no-owner','--no-acl','-d','phase2k_restore_test',str(archive)],env=env,check=True)
+    with archive.open('rb') as input_file:
+        subprocess.run(['docker','exec','-i',container,'pg_restore','-U','phase2k_test',
+            '--exit-on-error','--single-transaction','--no-owner','--no-acl',
+            '-d','phase2k_restore_test'],stdin=input_file,check=True)
     restored=psycopg2.connect(host='127.0.0.1',port=55439,user='phase2k_test',password=url.password,dbname='phase2k_restore_test');restored.autocommit=True
     checks={}
     queries={
