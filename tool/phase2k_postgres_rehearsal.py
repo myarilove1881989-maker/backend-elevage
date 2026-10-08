@@ -141,7 +141,7 @@ def main():
         tables=[row[0] for row in cursor.fetchall()]
     for table in tables:
         assert re.fullmatch('[a-z_0-9]+',table)
-        query=f'SELECT row_to_json(t)::text FROM {table} t ORDER BY id'
+        query=f'SELECT row_to_json(t)::text FROM {table} t ORDER BY 1'
         with connection.cursor() as cursor:cursor.execute(query);source=cursor.fetchall()
         with restored.cursor() as cursor:cursor.execute(query);target=cursor.fetchall()
         assert source==target,table
