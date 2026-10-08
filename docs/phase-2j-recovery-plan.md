@@ -2,6 +2,8 @@
 
 ## Cible Render à identifier avant toute opération
 
+Mise à jour après autorisation explicite de lecture limitée : DATABASE_URL du backend `srv-d7sdmucm0tmc73cvc6u0` pointe vers l’hôte `dpg-da2spvv40ujc73avuefg-a` et la base logique `elevage`. Liaison **confirmée** avec `elevage-db` dans My Workspace. Les réserves de liaison dans les paragraphes d’audit initial ci-dessous sont levées. Aucun secret enregistré dans ce document. Incident du relevé automatique d’interface documenté dans le rapport général : une sortie d’outil a inclus l’URL complète lors du remasquage ; rotation recommandée, non exécutée. Aucun déploiement/migration/changement Render.
+
 Render authentifié ; audit des deux espaces demandé par l’utilisateur. L’URL API mobile correspond à `backend-elevage` dans `My Workspace` (tea-d7rn0628qa3s73dkf780), service `srv-d7sdmucm0tmc73cvc6u0`, main, virginia, free, SHA live90ce6fe3bd1272c3603776eb22d20bd16455b4b7. Base candidate du même environnement Production : `elevage-db`, IDdpg-da2spvv40ujc73avuefg-a, nom logique elevage, version SQL18.4, basic_256mb/5GB, sans HA/replica. Liaison DATABASE_URL non confirmée : lecture du secret refusée par le contrôle automatique. Ne pas la considérer démontrée par le seul environnement commun.
 
 Migrations réelles de cette base : core0001–0015 seulement, pas de token_blacklist ni triggers applicatifs. PITR3jours et un export du5octobre2026 à22h27 Europe/Paris visibles, rétention exports au moins7jours ; archive non téléchargée et restauration non testée. Version locale18.1 distincte de18.4 réelle : nouveau contrôle18.4 requis.
