@@ -12,11 +12,10 @@ BIN = Path('C:/Program Files/PostgreSQL/18/bin')
 DATA = ROOT / ('.phase2j-postgres-' + uuid.uuid4().hex)
 PROOF = ROOT / 'phase2j-evidence' / DATA.name
 PORT = '55440'
-ENV = {**os.environ, 'SECRET_KEY': 'phase2j-synthetic-only-secret-not-for-deployment',
+ENV = {**{k: v for k, v in os.environ.items() if not k.upper().startswith('PG')},
+       'SECRET_KEY': 'phase2j-synthetic-only-secret-not-for-deployment',
        'DEBUG': 'true', 'DATABASE_URL': '', 'PGHOST': '127.0.0.1',
        'PGPORT': PORT, 'PGUSER': 'phase2j_test', 'PGDATABASE': 'postgres', 'PGCONNECT_TIMEOUT': '5'}
-for name in ('PGPASSWORD', 'PGSERVICE', 'PGSERVICEFILE', 'PGOPTIONS'):
-    ENV.pop(name, None)
 
 def run(args, name):
     log = PROOF / (name + '.log')
@@ -74,7 +73,7 @@ def main():
             'dump_sha256': hashlib.sha256(dump.read_bytes()).hexdigest(), 'checks': checks}, indent=2)+'\n')
         print('PHASE2J_SYNTHETIC_RESTORE_PASSED')
     finally:
-        if started:
+        if started or (DATA / 'postmaster.pid').exists():
             run([BIN/'pg_ctl.exe', '-D', DATA, '-m', 'fast', '-w', 'stop'], 'stop')
 
 if __name__ == '__main__':
