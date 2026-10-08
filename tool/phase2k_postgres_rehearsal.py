@@ -70,7 +70,7 @@ def main():
             rejected.append(label)
         else:raise AssertionError(f'Invalid legacy money accepted: {label}')
         finally:Payment.objects.filter(pk=original.pk).update(montant=original.montant)
-    durations={};started={};locks=set();stop=threading.Event()
+    durations={};started={};locks=set();monitor_errors=[];stop=threading.Event()
     def sample_locks():
         monitor=psycopg2.connect(os.environ['DATABASE_URL']);monitor.autocommit=True
         try:
@@ -78,6 +78,7 @@ def main():
                 with monitor.cursor() as cursor:
                     cursor.execute("SELECT mode,granted FROM pg_locks WHERE pid=%s AND relation IS NOT NULL",[connection_pid])
                     locks.update(cursor.fetchall())
+        except BaseException as error:monitor_errors.append(type(error).__name__)
         finally: monitor.close()
     with connection.cursor() as cursor:
         cursor.execute('SELECT pg_backend_pid()');connection_pid=cursor.fetchone()[0]
@@ -89,6 +90,7 @@ def main():
         executor=MigrationExecutor(connection,progress)
         executor.migrate(executor.loader.graph.leaf_nodes())
     finally:stop.set();thread.join()
+    assert not monitor_errors and locks, 'Migration lock sampling failed'
     from core.models import Payment,Lettrage,ExploitationMembership,Exploitation,AuditEvent
     assert before==amounts(Payment)
     assert allocations_before==amounts(Lettrage)
@@ -123,7 +125,7 @@ def main():
         'memberships': 'SELECT user_id,exploitation_id,role FROM core_exploitationmembership ORDER BY user_id',
         'audit': 'SELECT id,exploitation_id,actor_user_id,action,entity_type,entity_id,after_data::text FROM core_auditevent ORDER BY id',
         'migrations': 'SELECT app,name FROM django_migrations ORDER BY app,name',
-        'constraints': "SELECT conrelid::regclass::text,conname,contype,convalidated,conkey,confkey,confrelid::regclass::text FROM pg_constraint WHERE connamespace='public'::regnamespace ORDER BY conrelid::regclass::text,conname",
+        'constraints': "SELECT conrelid::regclass::text,conname,contype,convalidated,ARRAY(SELECT attname FROM unnest(conkey) WITH ORDINALITY AS k(num,pos) JOIN pg_attribute a ON a.attrelid=conrelid AND a.attnum=k.num ORDER BY k.pos),ARRAY(SELECT attname FROM unnest(confkey) WITH ORDINALITY AS k(num,pos) JOIN pg_attribute a ON a.attrelid=confrelid AND a.attnum=k.num ORDER BY k.pos),confrelid::regclass::text FROM pg_constraint WHERE connamespace='public'::regnamespace ORDER BY conrelid::regclass::text,conname",
         'triggers': 'SELECT tgname,pg_get_triggerdef(oid) FROM pg_trigger WHERE NOT tgisinternal ORDER BY tgname',
         'functions': "SELECT proname,pg_get_functiondef(oid) FROM pg_proc WHERE pronamespace='public'::regnamespace ORDER BY proname",
         'sequences': "SELECT sequencename,last_value FROM pg_sequences WHERE schemaname='public' ORDER BY sequencename",
