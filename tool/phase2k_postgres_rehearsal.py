@@ -1,5 +1,6 @@
 """CI-only PostgreSQL18.4 upgrade and restore of a wholly synthetic corpus."""
 import hashlib
+import importlib
 import json
 import os
 from pathlib import Path
@@ -42,6 +43,7 @@ def main():
     executor = MigrationExecutor(connection)
     apps = executor.loader.project_state([('core','0015_mouvement_lot_origine')]).apps
     User,Farm,Client,Payment = [apps.get_model('core',name) for name in ('User','Exploitation','Client','Payment')]
+    Lot,Vente,Lettrage,Espece = [apps.get_model('core',name) for name in ('Lot','Vente','Lettrage','Espece')]
     for i in range(20):
         owner=User.objects.create(username=f'synthetic_owner_{i}',password='!')
         farm=Farm.objects.create(nom=f'Synthetic farm {i}',proprietaire=owner)
@@ -49,7 +51,23 @@ def main():
         for j in range(2): User.objects.create(username=f'synthetic_operator_{i}_{j}',password='!',exploitation=farm)
         client=Client.objects.create(nom=f'Synthetic client {i}',exploitation=farm)
         Payment.objects.bulk_create([Payment(client=client,exploitation=farm,montant=123.25+j,date='2026-10-08') for j in range(100)])
+        lot=Lot.objects.create(exploitation=farm,espece=Espece.objects.first(),nom=f'Synthetic lot {i}',date_debut='2026-10-08')
+        sale=Vente.objects.create(lot=lot,client=client,quantite=100,prix_unitaire=Decimal('100.00'),montant_total=Decimal('10000.00'))
+        Lettrage.objects.create(vente=sale,payment=Payment.objects.filter(exploitation=farm).first(),montant=123.25)
     before=amounts(Payment)
+    allocations_before=amounts(Lettrage)
+    validator=importlib.import_module('core.migrations.0023_alter_lettrage_montant_alter_payment_montant_and_more').validate_existing_money
+    rejected=[]
+    original=Payment.objects.first()
+    for label,value in [('subcent',123.251),('negative',-.01),('overflow',10000000000.0),('nan',float('nan')),('infinity',float('inf'))]:
+        Payment.objects.filter(pk=original.pk).update(montant=value)
+        try:
+            with connection.schema_editor() as editor:validator(apps,editor)
+        except RuntimeError as error:
+            assert 'no conversion performed' in str(error)
+            rejected.append(label)
+        else:raise AssertionError(f'Invalid legacy money accepted: {label}')
+        finally:Payment.objects.filter(pk=original.pk).update(montant=original.montant)
     durations={};started={};locks=set();stop=threading.Event()
     def sample_locks():
         monitor=psycopg2.connect(os.environ['DATABASE_URL']);monitor.autocommit=True
@@ -69,8 +87,9 @@ def main():
         executor=MigrationExecutor(connection,progress)
         executor.migrate(executor.loader.graph.leaf_nodes())
     finally:stop.set();thread.join()
-    from core.models import Payment,ExploitationMembership,Exploitation,AuditEvent
+    from core.models import Payment,Lettrage,ExploitationMembership,Exploitation,AuditEvent
     assert before==amounts(Payment)
+    assert allocations_before==amounts(Lettrage)
     assert ExploitationMembership.objects.filter(role='OWNER').count()==20
     assert ExploitationMembership.objects.filter(role='OPERATEUR').count()==40
     assert not Exploitation.objects.filter(offline_policy_enabled=True).exists()
@@ -98,8 +117,9 @@ def main():
     checks={}
     queries={
         'payments': 'SELECT id,montant::text FROM core_payment ORDER BY id',
+        'allocations': 'SELECT id,vente_id,payment_id,montant::text FROM core_lettrage ORDER BY id',
         'memberships': 'SELECT user_id,exploitation_id,role FROM core_exploitationmembership ORDER BY user_id',
-        'audit': 'SELECT id,exploitation_id,actor_user_id,action,entity_type,entity_id,after_data FROM core_auditevent ORDER BY id',
+        'audit': 'SELECT id,exploitation_id,actor_user_id,action,entity_type,entity_id,after_data::text FROM core_auditevent ORDER BY id',
         'migrations': 'SELECT app,name FROM django_migrations ORDER BY app,name',
         'constraints': "SELECT conrelid::regclass::text,conname,contype,convalidated,conkey,confkey,confrelid::regclass::text FROM pg_constraint WHERE connamespace='public'::regnamespace ORDER BY conrelid::regclass::text,conname",
         'triggers': 'SELECT tgname,pg_get_triggerdef(oid) FROM pg_trigger WHERE NOT tgisinternal ORDER BY tgname',
@@ -122,7 +142,7 @@ def main():
                     mutation_checks[f'{table}:{action}']=error.pgcode
                 else:raise AssertionError(f'{table} accepted {action}')
     restored.close()
-    (PROOF/'postgres18-4-rehearsal.json').write_text(json.dumps({'synthetic_only':True,'postgres_version':version,'farms':20,'users':60,'payments':2000,'money_preserved':True,'membership_bootstrap':True,'migration_seconds':durations,'sampled_locks':sorted(locks),'lock_sampling_interval_seconds':.01,'concurrent_load_test':False,'restore_checks':checks,'mutation_rejections':mutation_checks,'archive_sha256':hashlib.sha256(archive.read_bytes()).hexdigest()},indent=2)+'\n')
+    (PROOF/'postgres18-4-rehearsal.json').write_text(json.dumps({'synthetic_only':True,'postgres_version':version,'farms':20,'users':60,'payments':2000,'allocations':20,'money_preserved':True,'invalid_money_refused':rejected,'membership_bootstrap':True,'migration_seconds':durations,'sampled_locks':sorted(locks),'lock_sampling_interval_seconds':.01,'concurrent_load_test':False,'restore_checks':checks,'mutation_rejections':mutation_checks,'archive_sha256':hashlib.sha256(archive.read_bytes()).hexdigest()},indent=2)+'\n')
     print('PHASE2K_POSTGRES18_4_UPGRADE_AND_RESTORE_PASSED')
 
 if __name__=='__main__':main()
