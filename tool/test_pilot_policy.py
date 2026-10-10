@@ -16,6 +16,10 @@ class PilotPolicyTests(unittest.TestCase):
     def test_valid(self):
         self.assertEqual(validate_environment(self.env), 'backend-elevage-pilot.onrender.com')
 
+    def test_render_generated_secret_format(self):
+        env = dict(self.env, PILOT_ED25519_SEED='syntheticRandomSecret-0123456789ABCD')
+        self.assertEqual(validate_environment(env), env['PILOT_WEB_HOST'])
+
     def test_every_missing_setting_is_refused(self):
         for name in self.env:
             with self.subTest(name=name), self.assertRaises(ValueError):

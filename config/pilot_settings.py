@@ -1,5 +1,6 @@
 """Isolated pilot settings. Production settings are unchanged."""
 import os
+import hashlib
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from django.core.exceptions import ImproperlyConfigured
@@ -31,8 +32,9 @@ DATABASES['default']['CONN_MAX_AGE'] = 60
 DATABASES['default']['OPTIONS'].update(connect_timeout=10)
 OFFLINE_SIGNING_KEY_ID = 'pilot-ed25519-v1'
 # Render generates the seed once, independently of production. Never log it.
-_key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(os.environ['PILOT_ED25519_SEED']))
+_seed = hashlib.sha256(b'ELEVAGE-PILOT-ED25519-V1\x00' + os.environ['PILOT_ED25519_SEED'].encode('utf-8')).digest()
+_key = Ed25519PrivateKey.from_private_bytes(_seed)
 OFFLINE_SIGNING_PRIVATE_KEY = _key.private_bytes(
     serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
     serialization.NoEncryption()).decode('ascii')
-del _key
+del _key, _seed

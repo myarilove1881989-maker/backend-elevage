@@ -6,7 +6,7 @@ Le Blueprint crée uniquement backend-elevage-pilot et elevage-pilot-db (Virgini
 
 `config.pilot_settings` exige APP_ENV=pilot et contrôle la destination PostgreSQL interne, le nom elevage_pilot et le rôle elevage_pilot_owner. Il n'autorise ni SQLite ni une destination différente. HTTPS et cookies sécurisés ; hôte pilote exact ; CORS désactivé ; courriel dummy. Les paramètres de production ne changent pas.
 
-Render génère SECRET_KEY, PILOT_ED25519_SEED et deux mots de passe de comptes fictifs. Le seed 32 octets crée en mémoire une clé Ed25519 serveur stable, indépendante de toute clé Android ou serveur existante. Aucune de ces valeurs ne doit apparaître dans les journaux, le dépôt ou les rapports.
+Render génère SECRET_KEY, PILOT_ED25519_SEED et deux mots de passe de comptes fictifs. Le secret aléatoire PILOT_ED25519_SEED est transformé par SHA-256 avec un préfixe de domaine en un seed 32 octets, qui crée en mémoire une clé Ed25519 serveur stable, indépendante de toute clé Android ou serveur existante. Aucune de ces valeurs ne doit apparaître dans les journaux, le dépôt ou les rapports.
 
 La commande preDeploy `pilot_deploy` vérifie en lecture seule le nom, le rôle, l'hôte, PostgreSQL18 et l'inventaire des tables avant tout migrate. Un verrou advisory de session empêche deux déploiements concurrents. Une base non vide sans django_migrations, ou avec des comptes non reconnus, bloque l'opération. Les migrations ne figurent pas dans le lancement Gunicorn.
 

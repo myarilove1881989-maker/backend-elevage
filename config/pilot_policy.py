@@ -35,8 +35,9 @@ def validate_environment(env):
     for name in ('SECRET_KEY', 'PILOT_OWNER_PASSWORD', 'PILOT_OPERATOR_PASSWORD'):
         if len(required(name)) < 32:
             raise ValueError('PILOT_CONFIG: independent strong secret required for ' + name)
-    if not re.fullmatch(r'[0-9a-fA-F]{64}', required('PILOT_ED25519_SEED')):
-        raise ValueError('PILOT_CONFIG: 32-byte Ed25519 seed required')
+    seed = required('PILOT_ED25519_SEED')
+    if len(seed) < 32 or any(character.isspace() for character in seed):
+        raise ValueError('PILOT_CONFIG: strong independent Ed25519 secret required')
     if env.get('OFFLINE_SIGNING_PRIVATE_KEY'):
         raise ValueError('PILOT_CONFIG: inherited signing key forbidden')
     return web_host
