@@ -1,0 +1,61 @@
+previews:
+  generation: "off"
+projects:
+  - name: Elevage Pilote
+    environments:
+      - name: Pilote
+        databases:
+          - name: elevage-pilot-db
+            databaseName: elevage_pilot
+            user: elevage_pilot_owner
+            plan: 0.1c-256mb
+            diskSizeGB: 5
+            storageAutoscalingEnabled: false
+            postgresMajorVersion: "18"
+            region: virginia
+            ipAllowList: []
+        services:
+          - type: web
+            name: backend-elevage-pilot
+            runtime: python
+            repo: https://github.com/myarilove1881989-maker/backend-elevage
+            branch: feature/offline-pilot-render-guard
+            plan: 0.5c-512mb
+            region: virginia
+            numInstances: 1
+            autoDeployTrigger: "off"
+            buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
+            preDeployCommand: python manage.py pilot_deploy
+            startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 2
+            healthCheckPath: /api/pilot-health/
+            envVars:
+              - key: PYTHON_VERSION
+                value: "3.14.2"
+              - key: DJANGO_SETTINGS_MODULE
+                value: config.pilot_settings
+              - key: APP_ENV
+                value: pilot
+              - key: DEBUG
+                value: "False"
+              - key: PILOT_WEB_HOST
+                value: backend-elevage-pilot.onrender.com
+              - key: DATABASE_URL
+                fromDatabase:
+                  name: elevage-pilot-db
+                  property: connectionString
+              - key: PILOT_DB_HOST
+                fromDatabase:
+                  name: elevage-pilot-db
+                  property: host
+              - key: PILOT_DB_NAME
+                value: elevage_pilot
+              - key: PILOT_DB_USER
+                value: elevage_pilot_owner
+              - key: SECRET_KEY
+                generateValue: true
+              - key: PILOT_ED25519_SEED
+                generateValue: true
+              - key: PILOT_OWNER_PASSWORD
+                generateValue: true
+              - key: PILOT_OPERATOR_PASSWORD
+                generateValue: true
