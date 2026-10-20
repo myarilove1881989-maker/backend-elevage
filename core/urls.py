@@ -2,7 +2,10 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework.routers import DefaultRouter
    
-from . import views
+from . import views, foundation_views as foundation
+from .auth_views import MembershipRefreshView, logout
+from .cache_views import cache_page
+from .terrain_views import transport_challenge, submissions, submission_status
 
 # ================= ROUTER =================
 router = DefaultRouter()
@@ -10,6 +13,19 @@ router.register("tasks", views.TaskViewSet)
 
 
 urlpatterns = [
+    path('offline/transport-challenge/', transport_challenge),
+    path('offline/submissions/', submissions),
+    path('offline/submissions/status/', submission_status),
+    path('cache-page/', cache_page),
+    path('me/capabilities/', foundation.capabilities),
+    path('memberships/', foundation.members),
+    path('memberships/<int:pk>/', foundation.member_detail),
+    path('devices/', foundation.devices),
+    path('devices/challenge/', foundation.challenge),
+    path('devices/<int:pk>/<str:action>/', foundation.device_transition),
+    path('offline-policy/enable/', foundation.enable_policy),
+    path('offline-authorizations/', foundation.offline_authorization),
+    path('audit-events/', foundation.audit_events),
 
     # ROUTER
     path('', include(router.urls)),
@@ -17,7 +33,8 @@ urlpatterns = [
     # AUTH
     path('register/', views.api_register),
     path('token/', TokenObtainPairView.as_view()),
-    path('token/refresh/', TokenRefreshView.as_view()),
+    path('token/refresh/', MembershipRefreshView.as_view()),
+    path('token/logout/', logout),
     path('password-reset/request/', views.api_password_reset_request),
     path('password-reset/verify/', views.api_password_reset_verify),
     path('password-reset/confirm/', views.api_password_reset_confirm),
