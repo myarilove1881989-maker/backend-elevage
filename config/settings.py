@@ -181,7 +181,7 @@ CSRF_COOKIE_SECURE = os.environ.get("CSRF_COOKIE_SECURE", "False").lower() == "t
 # ===============================
 EMAIL_BACKEND = os.environ.get(
     "EMAIL_BACKEND",
-    "django.core.mail.backends.console.EmailBackend",
+    "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
 )
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
@@ -199,3 +199,6 @@ if not 1 <= OFFLINE_AUTHORIZATION_DAYS <= 30:
     raise ValueError('OFFLINE_AUTHORIZATION_DAYS must be between 1 and 30')
 OFFLINE_SIGNING_PRIVATE_KEY = os.environ.get('OFFLINE_SIGNING_PRIVATE_KEY', '')
 OFFLINE_SIGNING_KEY_ID = os.environ.get('OFFLINE_SIGNING_KEY_ID', 'offline-v1')
+
+EMAIL_TIMEOUT = 10
+EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "false").lower() == "true"
