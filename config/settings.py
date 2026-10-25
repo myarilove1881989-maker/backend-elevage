@@ -200,5 +200,5 @@ if not 1 <= OFFLINE_AUTHORIZATION_DAYS <= 30:
 OFFLINE_SIGNING_PRIVATE_KEY = os.environ.get('OFFLINE_SIGNING_PRIVATE_KEY', '')
 OFFLINE_SIGNING_KEY_ID = os.environ.get('OFFLINE_SIGNING_KEY_ID', 'offline-v1')
 
-EMAIL_TIMEOUT = 10
+EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "15"))
 EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "false").lower() == "true"

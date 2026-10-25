@@ -55,7 +55,7 @@ abonnement, service ou paramètre distant n’a été créé/modifié.
 | DEBUG | false |
 | SECRET_KEY | conserver la clé existante |
 
-Timeout SMTP fixé à dix secondes. Configurer SPF, DKIM et DMARC pour le domaine
+Timeout SMTP configurable par EMAIL_TIMEOUT, quinze secondes par défaut. Configurer SPF, DKIM et DMARC pour le domaine
 expéditeur. Ne jamais utiliser le backend console en production (codes dans
 les logs). Tester une boîte de recette seulement après autorisation d’envoi.
 
