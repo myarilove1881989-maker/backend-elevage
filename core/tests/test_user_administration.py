@@ -56,6 +56,27 @@ class UserAdministrationTests(TestCase):
         invalid=self.api.post('/api/memberships/',{'username':'Bad','password':INITIAL,'permissions':['users.manage']},format='json')
         self.assertEqual(invalid.status_code,400);self.assertFalse(User.objects.filter(username='Bad').exists())
 
+    def test_four_character_operator_password_and_owner_policy(self):
+        from core.credential_services import validate_new_password
+        from rest_framework.exceptions import ValidationError
+        result=self.api.post('/api/memberships/',{'display_name':'Short',
+            'username':'short','password':'1234','permissions':[]},format='json')
+        self.assertEqual(result.status_code,201,result.data)
+        pending=self.login('short','1234')
+        self.assertTrue(pending.data['password_change_required'])
+        changed=APIClient().post('/api/password/change-initial/',{
+            'change_token':pending.data['change_token'],'new_password':'4321'},format='json')
+        self.assertEqual(changed.status_code,200,changed.data)
+        self.assertIn('access',self.login('short','4321').data)
+        self.assertNotEqual(self.login('short','1234').status_code,200)
+        member=ExploitationMembership.objects.get(pk=result.data['id'])
+        reset=self.api.post(f'/api/memberships/{member.pk}/reset-password/',
+            {'new_password':'9876','expected_version':member.version},format='json')
+        self.assertEqual(reset.status_code,200,reset.data)
+        self.assertTrue(self.login('short','9876').data['password_change_required'])
+        with self.assertRaises(ValidationError):
+            validate_new_password(self.owner,'1234')
+
     def test_initial_authorization_never_business_session_and_one_time(self):
         row=self.create(rights=['purchases.create'])
         pending=self.login('Jean',INITIAL)
@@ -127,7 +148,7 @@ class UserAdministrationTests(TestCase):
         events=json.dumps(list(AuditEvent.objects.values('before_data','after_data','reason_text')),default=str)
         for secret in (INITIAL,FINAL,token):self.assertNotIn(secret,events)
         self.assertTrue(AuditEvent.objects.filter(entity_type='core.user',category='SECURITY').exists())
-        for password in ('weak','123456789012'):
+        for password in ('abc','    '):
             result=self.api.post('/api/memberships/',{'username':'weak','password':password},format='json')
             self.assertEqual(result.status_code,400)
         result=self.api.patch(f"/api/memberships/{row['id']}/",{'role':'OWNER'},format='json')

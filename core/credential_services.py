@@ -26,10 +26,17 @@ class CredentialJWTAuthentication(JWTAuthentication):
 
 
 def validate_new_password(user, password, *, must_differ=False):
-    if len(password)<12:
-        raise ValidationError({'new_password': 'Utilisez au moins 12 caractères.'})
+    from .access_policy import active_membership
+    member = active_membership(user, allow_password_change=True)
+    operator = member.role == 'OPERATEUR'
+    minimum = 4 if operator else 12
+    if len(password.strip()) < minimum:
+        raise ValidationError({'new_password': f'Utilisez au moins {minimum} caractères.'})
     if must_differ and user.check_password(password):
         raise ValidationError({'new_password': 'Choisissez un mot de passe différent.'})
+    # The operator policy is explicitly simpler; owner validation is retained.
+    if operator:
+        return
     try:
         validate_password(password, user)
     except DjangoValidationError as exc:

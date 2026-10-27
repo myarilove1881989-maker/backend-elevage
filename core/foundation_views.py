@@ -143,12 +143,9 @@ def members(request):
     values['first_name'] = values.pop('display_name')
     User = get_user_model()
     candidate = User(username=values['username'], email=values['email'], first_name=values['first_name'])
-    if len(values['password'])<12:
-        raise ValidationError({'password':'Utilisez au moins 12 caractères.'})
-    try:
-        validate_password(values['password'], candidate)
-    except DjangoValidationError as exc:
-        raise ValidationError({'password': exc.messages})
+    # This endpoint creates only an operator, never an owner.
+    if len(values['password'].strip()) < 4:
+        raise ValidationError({'password':'Utilisez au moins 4 caractères.'})
     with audit_scope(online_context(request)):
         Exploitation.objects.select_for_update().get(pk=owner.exploitation_id)
         require_owner(request.user)
