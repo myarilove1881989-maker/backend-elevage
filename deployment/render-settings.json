@@ -1,0 +1,12 @@
+{
+  "service_id": "srv-d7sdmucm0tmc73cvc6u0",
+  "configuration_only_not_applied": true,
+  "repo_layout": "backend archive extracted at repository root",
+  "rootDir": "",
+  "buildCommand": "pip install -r requirements.txt && python manage.py collectstatic --noinput --settings=config.settings_production",
+  "startCommand": "sh deployment/render-start.sh",
+  "preDeployCommand": "",
+  "healthCheckPath": "/api/health/",
+  "autoDeploy": "no",
+  "secondary": "DO NOT TOUCH; keep suspended"
+}

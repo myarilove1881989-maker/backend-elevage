@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from datetime import timedelta
-import dj_database_url
+from config.database_config import build_databases, production_environment
 
 # ===============================
 # BASE DIR
@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "core",
 ]
@@ -82,22 +83,10 @@ WSGI_APPLICATION = "config.wsgi.application"
 # ===============================
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if DATABASE_URL:
-    DATABASES = {
-        "default": dj_database_url.parse(
-            DATABASE_URL,
-            conn_max_age=600,
-            ssl_require=not DEBUG,
-        )
-    }
-else:
-    # Fallback local
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+DATABASES = build_databases(
+    DATABASE_URL, debug=DEBUG, production=production_environment(os.environ),
+    base_dir=BASE_DIR,
+)
 
 # ===============================
 # PASSWORDS
@@ -137,7 +126,7 @@ STORAGES = {
 # ===============================
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "core.credential_services.CredentialJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
@@ -151,6 +140,8 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "AUTH_HEADER_TYPES": ("Bearer",),
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
 }
 
 # ===============================
@@ -161,6 +152,7 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     "authorization",
     "content-type",
+    "x-elevage-device", "x-elevage-challenge", "x-elevage-signature",
 ]
 
 # ===============================
@@ -188,3 +180,14 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     "DEFAULT_FROM_EMAIL",
     EMAIL_HOST_USER or "no-reply@elevage.app",
 )
+
+# Phase 2B: no private signing key is generated automatically or shared with clients.
+OFFLINE_AUTHORIZATION_DAYS = int(os.environ.get('OFFLINE_AUTHORIZATION_DAYS', '7'))
+if not 1 <= OFFLINE_AUTHORIZATION_DAYS <= 30:
+    raise ValueError('OFFLINE_AUTHORIZATION_DAYS must be between 1 and 30')
+OFFLINE_SIGNING_PRIVATE_KEY = os.environ.get('OFFLINE_SIGNING_PRIVATE_KEY', '')
+OFFLINE_SIGNING_KEY_ID = os.environ.get('OFFLINE_SIGNING_KEY_ID', 'offline-v1')
+
+# Opt-in only: this does not enable issuance unless explicitly configured locally.
+OFFLINE_FINE_PERMISSIONS_ENABLED = os.environ.get('OFFLINE_FINE_PERMISSIONS_ENABLED', 'false').lower() == 'true'
+OFFLINE_FINE_AUTHORIZATION_HOURS = int(os.environ.get('OFFLINE_FINE_AUTHORIZATION_HOURS', '168'))

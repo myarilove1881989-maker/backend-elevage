@@ -13,19 +13,14 @@ from .models import (
     MouvementOeufs,
     Vente,
     VenteOeufs,
+    TerrainStockAdjustment,
 )
 
 
 def get_live_birds(lot):
-    total_achats = Achat.objects.filter(lot=lot).aggregate(total=Sum("quantite"))["total"] or 0
-    total_naissances = Mouvement.objects.filter(
-        lot=lot, type_mouvement="NAISSANCE",
-    ).aggregate(total=Sum("quantite"))["total"] or 0
-    total_sorties = Mouvement.objects.filter(
-        lot=lot,
-        type_mouvement__in=["VENTE", "MORTALITE", "DON", "VOL"],
-    ).aggregate(total=Sum("quantite"))["total"] or 0
-    return max(total_achats + total_naissances - total_sorties, 0)
+    from .animal_stock import current_animal_stock
+    # Production denominators retain their existing non-negative convention.
+    return max(current_animal_stock(lot), 0)
 
 
 def get_hen_days(lot, start, end):
@@ -41,6 +36,10 @@ def get_hen_days(lot, start, end):
         lot=lot, date__lte=end, type_mouvement__in=['VENTE', 'MORTALITE', 'DON', 'VOL']
     ).values('date').annotate(n=Sum('quantite')):
         events[row['date']] = events.get(row['date'], 0) - row['n']
+    from django.db.models.functions import TruncDate
+    for row in TerrainStockAdjustment.objects.filter(lot=lot,kind='ANIMAL',occurred_at__date__lte=end).annotate(
+            day=TruncDate('occurred_at')).values('day').annotate(n=Sum('signed_quantity')):
+        events[row['day']] = events.get(row['day'],0) + row['n']
     birds = sum(n for day, n in events.items() if day < start)
     cursor = start
     total = 0
@@ -55,7 +54,11 @@ def get_egg_stock(exploitation, lot=None):
     mouvements = MouvementOeufs.objects.filter(exploitation=exploitation)
     if lot is not None:
         mouvements = mouvements.filter(lot=lot)
-    return mouvements.aggregate(total=Sum("quantite_signee"))["total"] or 0
+    adjustments = TerrainStockAdjustment.objects.filter(exploitation=exploitation,kind='EGG')
+    if lot is not None:
+        adjustments = adjustments.filter(lot=lot)
+    return (mouvements.aggregate(total=Sum("quantite_signee"))["total"] or 0) + (
+        adjustments.aggregate(total=Sum('signed_quantity'))['total'] or 0)
 
 
 def get_dated_egg_stock(exploitation, lot):
@@ -77,6 +80,11 @@ def get_dated_egg_stock(exploitation, lot):
         ).values("collecte_id").annotate(total=Sum("quantite"))
         .values_list("collecte_id", "total")
     )
+    restorations = {}
+    for credit in TerrainStockAdjustment.objects.filter(exploitation=exploitation,lot=lot,kind='EGG',
+            collection__isnull=False,signed_quantity__gt=0).values('collection_id','signed_quantity','occurred_at'):
+        restorations.setdefault(credit['collection_id'],[]).append({
+            'quantity':credit['signed_quantity'],'occurred_at':credit['occurred_at']})
     production_by_collection = {
         source_id: (amount, movement_type)
         for source_id, amount, movement_type in MouvementOeufs.objects.filter(
@@ -100,7 +108,11 @@ def get_dated_egg_stock(exploitation, lot):
             item["nombre_casses"] + item["nombre_declasses"]
             + item["nombre_consommes_donnes"]
         )
-        attributed = allocated_by_collection.get(item["id"], 0)
+        gross_attributed = allocated_by_collection.get(item["id"], 0)
+        credits = restorations.get(item['id'],[])
+        attributed = gross_attributed - sum(credit['quantity'] for credit in credits)
+        item['historical_base_remaining'] = commercialisable - gross_attributed
+        item['restorations'] = credits
         item["nombre_commercialisable"] = commercialisable
         item["sorties_affectees"] = attributed
         candidate_total += commercialisable - attributed
@@ -145,6 +157,9 @@ def plan_fifo_egg_sale(*, stock_state, quantity, sale_date, movement_at):
         stock_state["collectes"], key=lambda item: (item["collecte_at"], item["id"]),
     ):
         available = collection["restant"]
+        if collection.get('restorations'):
+            available = collection['historical_base_remaining'] + sum(credit['quantity'] for credit in collection['restorations']
+                if credit['occurred_at']<=movement_at and timezone.localdate(credit['occurred_at'])<=sale_date)
         if available <= 0:
             continue
         # Vente.date n'a pas d'heure : toutes les collectes du jour sont
@@ -197,6 +212,9 @@ def affect_egg_exit(mouvement, allocations):
         .values("collecte_id").annotate(total=Sum("quantite"))
         .values_list("collecte_id", "total")
     )
+    restored = dict(TerrainStockAdjustment.objects.filter(collection_id__in=ids,kind='EGG',
+        signed_quantity__gt=0,occurred_at__lte=mouvement.date).values('collection_id').annotate(
+        total=Sum('signed_quantity')).values_list('collection_id','total'))
     for item in allocations:
         source = sources[item["collecte"]]
         if item["quantite"] <= 0:
@@ -206,7 +224,7 @@ def affect_egg_exit(mouvement, allocations):
             timezone.localdate(source.collecte_at) > mouvement.vente_oeufs.vente.date
         ):
             raise ValidationError({"affectations": "La collecte doit précéder la sortie et sa vente."})
-        if previous.get(source.pk, 0) + item["quantite"] > source.nombre_commercialisable:
+        if previous.get(source.pk, 0) - restored.get(source.pk,0) + item["quantite"] > source.nombre_commercialisable:
             raise ValidationError({"affectations": "Quantité insuffisante dans la collecte indiquée."})
     return AffectationMouvementOeufs.objects.bulk_create([
         AffectationMouvementOeufs(
@@ -238,6 +256,8 @@ def sync_collection_stock_movement(collection):
 
 @transaction.atomic
 def save_collection(*, serializer, user):
+    from .access_policy import authorize_business_service
+    authorize_business_service(user, user.exploitation_id, 'egg_collections.create', serializer.validated_data['lot'])
     Lot.objects.select_for_update().get(pk=serializer.validated_data['lot'].pk)
     collection = serializer.save(
         exploitation=user.exploitation,
@@ -250,6 +270,9 @@ def save_collection(*, serializer, user):
 @transaction.atomic
 def update_collection(*, serializer):
     original = serializer.instance
+    from .access_policy import authorize_business_service
+    user = serializer.context['request'].user
+    authorize_business_service(user, user.exploitation_id, 'egg_collections.update', original)
     Lot.objects.select_for_update().get(pk=original.lot_id)
     original.refresh_from_db()
     if serializer.validated_data.get('lot', original.lot).pk != original.lot_id:
@@ -268,7 +291,14 @@ def update_collection(*, serializer):
 
 
 @transaction.atomic
-def delete_collection(collection):
+def delete_collection(collection, *, actor=None):
+    from .access_policy import authorize_business_service
+    from .audit import current_actor_context
+    if actor is None:
+        from django.contrib.auth import get_user_model
+        context = current_actor_context()
+        actor = get_user_model().objects.filter(pk=context.author_id).first() if context else None
+    authorize_business_service(actor, collection.exploitation_id, 'egg_collections.delete', collection)
     Lot.objects.select_for_update().get(pk=collection.lot_id)
     collection.refresh_from_db()
     if collection.affectations_sortie.exists():
@@ -279,7 +309,9 @@ def delete_collection(collection):
 
 
 @transaction.atomic
-def create_egg_sale(*, validated_data, user):
+def create_egg_sale(*, validated_data, user, business_occurred_at=None, terrain_note=''):
+    from .access_policy import authorize_business_service
+    authorize_business_service(user, user.exploitation_id, 'egg_sales.create', validated_data['lot'])
     requested_lot = validated_data.pop("lot")
     allocations = validated_data.pop("affectations", None)
     lot = Lot.objects.select_for_update().get(
@@ -298,7 +330,7 @@ def create_egg_sale(*, validated_data, user):
     prix_conditionnement = validated_data["prix_unitaire_conditionnement"]
     montant_total = nombre_conditionnements * prix_conditionnement
     sale_date = vente_data.get("date", None) or timezone.now().date()
-    movement_at = timezone.now()
+    movement_at = business_occurred_at or timezone.now()
 
     # Toutes les écritures de stock par API verrouillent ce lot. La lecture
     # des restants et la vente appartiennent à la même transaction.
@@ -320,12 +352,14 @@ def create_egg_sale(*, validated_data, user):
     vente = Vente.objects.create(
         lot=lot,
         client=client,
+        created_by=user,
         date=sale_date,
         quantite=nombre_conditionnements,
         prix_unitaire=prix_conditionnement,
     )
     vente_oeufs = VenteOeufs.objects.create(
         vente=vente,
+        created_by=user,
         exploitation=user.exploitation,
         lot=lot,
         nombre_oeufs=nombre_oeufs,
@@ -340,14 +374,21 @@ def create_egg_sale(*, validated_data, user):
         date=movement_at,
         vente_oeufs=vente_oeufs,
         created_by=user,
-        note=f"Vente d'œufs #{vente.pk}",
+        note=f"Vente d'œufs #{vente.pk}" + (f' — {terrain_note}' if terrain_note else ''),
     )
     affect_egg_exit(mouvement, allocations)
     return vente_oeufs
 
 
 @transaction.atomic
-def delete_egg_sale(vente_oeufs):
+def delete_egg_sale(vente_oeufs, *, actor=None):
+    from .access_policy import authorize_business_service
+    from .audit import current_actor_context
+    if actor is None:
+        from django.contrib.auth import get_user_model
+        context = current_actor_context()
+        actor = get_user_model().objects.filter(pk=context.author_id).first() if context else None
+    authorize_business_service(actor, vente_oeufs.exploitation_id, 'egg_sales.delete', vente_oeufs)
     client_id = vente_oeufs.vente.client_id
     if client_id:
         Client.objects.select_for_update().get(pk=client_id)

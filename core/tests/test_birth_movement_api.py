@@ -12,11 +12,16 @@ from core.models import (
     Lot, Mouvement, MouvementOeufs, Payment, User, Vente,
 )
 from core.views import get_lot_stock
+from core.tests.functional_fixtures import operator_for_tests
 
 
 class BirthMovementApiTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username='birth-owner')
+        self.owner = User.objects.create_user(username='birth-owner')
+        self.user = operator_for_tests(self.owner, 'birth-operator', [
+            'births.create', 'births.delete', 'animal_sales.create', 'mortality.create',
+            'donations.create', 'thefts.create', 'purchases.delete',
+            'weights.create', 'egg_collections.create', 'egg_sales.create'])
         self.other = User.objects.create_user(username='birth-other')
         self.api = APIClient()
         self.api.force_authenticate(self.user)
@@ -156,18 +161,19 @@ class BirthMovementApiTests(TestCase):
         self.assertEqual(Lot.objects.count(), 3)
         self.assertEqual(self.api.get(f'/api/lots/{foreign_parent.pk}/').status_code, 403)
         self.api.force_authenticate(self.other)
-        self.assertEqual(self.api.delete(f"/api/mouvements/delete/{own.data['id']}/").status_code, 403)
+        self.assertEqual(self.api.delete(f"/api/mouvements/delete/{own.data['id']}/").status_code, 404)
         self.assertEqual(self.api.get(f'/api/lots/{self.parent.pk}/').status_code, 403)
         self.assertEqual(self.api.get('/api/mouvements/').data, [])
 
-    def test_delete_unused_birth_removes_child_but_keeps_parent(self):
+    def test_delete_unused_birth_keeps_immutable_history_and_parent(self):
         response = self.birth()
         child_id = response.data['nouveau_lot']['id']
         removed = self.api.delete(f"/api/mouvements/delete/{response.data['id']}/")
-        self.assertEqual(removed.status_code, 200, removed.data)
-        self.assertFalse(Lot.objects.filter(pk=child_id).exists())
+        self.assertEqual(removed.status_code, 400, removed.data)
+        self.assertIn('HISTORY_IMMUTABLE_USE_SUPPORTED_CANCELLATION', str(removed.data))
+        self.assertTrue(Lot.objects.filter(pk=child_id).exists())
         self.assertTrue(Lot.objects.filter(pk=self.parent.pk).exists())
-        self.assertEqual(Mouvement.objects.count(), 0)
+        self.assertEqual(Mouvement.objects.count(), 1)
 
     def test_delete_birth_with_sale_is_blocked(self):
         response = self.birth()

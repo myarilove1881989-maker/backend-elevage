@@ -3,3 +3,35 @@ __pycache__/
 db.sqlite3
 .env
 .venv/
+.phase2j-postgres*/
+phase2j-evidence/
+phase2k-evidence/
+
+# Local secrets, signing material, databases and distributable artifacts
+.env*
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.db
+*.db-*
+*.apk
+*.aab
+**/key.properties
+.netrc
+.pgpass
+id_rsa
+id_ed25519
+secrets.json
+secrets.*.json
+credentials.json
+credentials.*.json
+service-account*.json
+# Disposable local test clusters and evidence, never application data.
+.offline-mission-tests/

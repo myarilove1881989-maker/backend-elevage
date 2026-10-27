@@ -7,6 +7,8 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.egg_services import affect_egg_exit, get_dated_egg_stock
+from core.tests.functional_fixtures import operator_for_tests
+
 from core.models import (
     AffectationMouvementOeufs, Client, CollecteOeufs, Espece, Lot, MouvementOeufs,
     User, Vente, VenteOeufs,
@@ -15,7 +17,10 @@ from core.models import (
 
 class EggFifoApiTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="fifo-ponte")
+        self.owner = User.objects.create_user(username="fifo-ponte-owner")
+        self.user = operator_for_tests(self.owner, "fifo-ponte", [
+            "egg_collections.create", "egg_sales.create", "egg_sales.delete", "cash.create",
+        ])
         self.api = APIClient()
         self.api.force_authenticate(self.user)
         species = Espece.objects.create(nom="Poule", exploitation=self.user.exploitation)
@@ -237,20 +242,41 @@ class EggFifoApiTests(TestCase):
         self.assertEqual(AffectationMouvementOeufs.objects.count(), 0)
         self.assertEqual(self.stock()["stock_global"], 200)
 
-    def test_unpaid_deletion_releases_fifo_and_paid_deletion_is_refused(self):
+    def test_unpaid_and_paid_deletion_are_refused_and_preserve_fifo(self):
+        from core.models import Payment, Lettrage
+
+        def ledger():
+            return {
+                model._meta.label: list(model.objects.order_by("pk").values())
+                for model in (CollecteOeufs, Vente, VenteOeufs, MouvementOeufs,
+                              AffectationMouvementOeufs, Payment, Lettrage)
+            }
+
         a = self.collect(100, days_ago=3)
         b = self.collect(200, days_ago=2)
         unpaid = self.sell(150)
         self.assertEqual(unpaid.status_code, 201, unpaid.data)
-        self.assertEqual(self.api.delete(f"/api/oeufs/ventes/{unpaid.data['id']}/").status_code, 204)
-        self.assertEqual(self.stock()["stock_global"], 300)
-        self.assertEqual(AffectationMouvementOeufs.objects.count(), 0)
+        before = ledger()
+        response = self.api.delete(f"/api/oeufs/ventes/{unpaid.data['id']}/")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("HISTORY_IMMUTABLE_USE_SUPPORTED_CANCELLATION", str(response.data))
+        self.assertEqual(ledger(), before)
+        self.assertEqual(self.stock()["stock_global"], 150)
+        self.assertEqual(AffectationMouvementOeufs.objects.count(), 2)
+        self.assertEqual({row["id"]: row["restant"] for row in self.stock()["collectes"]},
+                         {a: 0, b: 150})
         paid = self.sell(150)
+        self.assertEqual(paid.status_code, 201, paid.data)
         payment = self.api.post("/api/payments/create/", {
             "client": self.client.pk, "vente": paid.data["vente"], "montant": 5000,
         }, format="json")
         self.assertEqual(payment.status_code, 201, payment.data)
-        self.assertEqual(self.api.delete(f"/api/oeufs/ventes/{paid.data['id']}/").status_code, 400)
+        paid_before = ledger()
+        paid_refusal = self.api.delete(f"/api/oeufs/ventes/{paid.data['id']}/")
+        self.assertEqual(paid_refusal.status_code, 400, paid_refusal.data)
+        self.assertIn("paiement", str(paid_refusal.data).lower())
+        self.assertEqual(ledger(), paid_before)
         self.assertEqual({row["id"]: row["restant"] for row in self.stock()["collectes"]},
-                         {a: 0, b: 150})
-        self.assertEqual(Vente.objects.count(), 1)
+                         {a: 0, b: 0})
+        self.assertEqual(self.stock()["stock_global"], 0)
+        self.assertEqual(Vente.objects.count(), 2)

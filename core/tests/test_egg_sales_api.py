@@ -5,12 +5,17 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from core.tests.functional_fixtures import operator_for_tests
+
 from core.models import Client, CollecteOeufs, Espece, Lot, MouvementOeufs, User, Vente, VenteOeufs
 
 
 class EggSalesApiTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="vente-oeufs", password="test-pass")
+        self.owner = User.objects.create_user(username="vente-oeufs-owner", password="test-pass")
+        self.user = operator_for_tests(self.owner, "vente-oeufs", [
+            "egg_sales.create", "egg_sales.delete", "cash.create",
+        ])
         self.api = APIClient()
         self.api.force_authenticate(self.user)
         self.espece = Espece.objects.create(
@@ -158,16 +163,33 @@ class EggSalesApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertTrue(VenteOeufs.objects.filter(id=sale_response.data["id"]).exists())
 
-    def test_unpaid_sale_deletion_restores_stock(self):
+    def test_unpaid_sale_deletion_is_refused_and_preserves_stock_and_debt(self):
+        from core.models import AffectationMouvementOeufs
+
         sale_response = self.api.post(
             "/api/oeufs/ventes/",
             self.sale_payload(),
             format="json",
         )
+        self.assertEqual(sale_response.status_code, 201, sale_response.data)
 
+        def ledger():
+            return {
+                model._meta.label: list(model.objects.order_by("pk").values())
+                for model in (CollecteOeufs, Vente, VenteOeufs, MouvementOeufs,
+                              AffectationMouvementOeufs)
+            }
+
+        before = ledger()
         response = self.api.delete(f"/api/oeufs/ventes/{sale_response.data['id']}/")
 
-        self.assertEqual(response.status_code, 204)
-        self.assertFalse(Vente.objects.filter(id=sale_response.data["vente"]).exists())
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("HISTORY_IMMUTABLE_USE_SUPPORTED_CANCELLATION", str(response.data))
+        self.assertEqual(ledger(), before)
+        self.assertTrue(Vente.objects.filter(id=sale_response.data["vente"]).exists())
         stock = sum(MouvementOeufs.objects.values_list("quantite_signee", flat=True))
-        self.assertEqual(stock, 300)
+        self.assertEqual(stock, 240)
+        detail = self.api.get(f"/api/oeufs/ventes/{sale_response.data['id']}/")
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertEqual(detail.data["montant_paye"], 0.0)
+        self.assertEqual(detail.data["reste"], 9000.0)

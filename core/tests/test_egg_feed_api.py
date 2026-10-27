@@ -5,12 +5,17 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from core.models import Achat, CategorieDepense, Client, Depense, Espece, Lot, User
+from core.tests.functional_fixtures import operator_for_tests
+
+from core.models import Achat, CategorieDepense, Client, Depense, Espece, Lot, Mouvement, User
 
 
 class EggFeedApiTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="aliment-oeufs", password="test-pass")
+        self.owner = User.objects.create_user(username="aliment-oeufs-owner", password="test-pass")
+        self.user = operator_for_tests(self.owner, "aliment-oeufs", [
+            "feed.create", "egg_collections.create", "egg_sales.create",
+        ])
         self.api = APIClient()
         self.api.force_authenticate(self.user)
         self.espece = Espece.objects.create(
@@ -36,6 +41,12 @@ class EggFeedApiTests(TestCase):
             prix_total=Decimal("100000.00"),
             prix_unitaire=Decimal("1000.00"),
             date=date(2026, 1, 1),
+            created_by=self.user,
+        )
+        # Per-bird statistics use the animal ledger, not the purchase document.
+        Mouvement.objects.create(
+            exploitation=self.user.exploitation, lot=self.lot,
+            type_mouvement="ACHAT", quantite=100, date=date(2026, 1, 1),
             created_by=self.user,
         )
         self.category = CategorieDepense.objects.create(

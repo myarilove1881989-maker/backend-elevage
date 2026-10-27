@@ -2,7 +2,15 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework.routers import DefaultRouter
    
-from . import views
+from . import views, foundation_views as foundation
+from .auth_views import MembershipRefreshView, MembershipLoginView, logout
+from .credential_views import change_initial_password, reset_operator_password
+from .cancellation_views import expense_cancellation
+from .history_views import business_history
+from .cache_views import cache_page
+from .terrain_views import transport_challenge, submissions, submission_status
+from .terrain_recovery import recovery
+from .reconciliation_views import reconciliation_list, reconciliation_detail, cash_sales
 
 # ================= ROUTER =================
 router = DefaultRouter()
@@ -10,14 +18,35 @@ router.register("tasks", views.TaskViewSet)
 
 
 urlpatterns = [
+    path('password/change-initial/', change_initial_password),
+    path('memberships/<int:pk>/reset-password/', reset_operator_password),
+    path('offline/recovery/', recovery),
+    path('offline/reconciliation/', reconciliation_list),
+    path('offline/reconciliation/<uuid:operation_uuid>/', reconciliation_detail),
+    path('offline/reconciliation/<uuid:operation_uuid>/cash-sales/', cash_sales),
+    path('offline/transport-challenge/', transport_challenge),
+    path('offline/submissions/', submissions),
+    path('offline/submissions/status/', submission_status),
+    path('cache-page/', cache_page),
+    path('me/capabilities/', foundation.capabilities),
+    path('memberships/', foundation.members),
+    path('memberships/<int:pk>/', foundation.member_detail),
+    path('devices/', foundation.devices),
+    path('devices/challenge/', foundation.challenge),
+    path('devices/<int:pk>/<str:action>/', foundation.device_transition),
+    path('offline-policy/enable/', foundation.enable_policy),
+    path('offline-authorizations/', foundation.offline_authorization),
+    path('audit-events/', foundation.audit_events),
+    path('history/', business_history),
 
     # ROUTER
     path('', include(router.urls)),
 
     # AUTH
     path('register/', views.api_register),
-    path('token/', TokenObtainPairView.as_view()),
-    path('token/refresh/', TokenRefreshView.as_view()),
+    path('token/', MembershipLoginView.as_view()),
+    path('token/refresh/', MembershipRefreshView.as_view()),
+    path('token/logout/', logout),
     path('password-reset/request/', views.api_password_reset_request),
     path('password-reset/verify/', views.api_password_reset_verify),
     path('password-reset/confirm/', views.api_password_reset_confirm),
@@ -38,7 +67,8 @@ urlpatterns = [
     # DEPENSES
     path('depenses/', views.api_depenses),
     path('depenses/create/', views.api_create_depense),
-    path('depenses/delete/<int:pk>/', views.api_delete_depense),
+    path('depenses/delete/<int:pk>/', expense_cancellation),
+    path('depenses/cancel/<int:pk>/', expense_cancellation),
     
     
     # ACHATS

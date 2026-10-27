@@ -6,11 +6,14 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import ConsommationAliment, Depense, Espece, Lot, User
+from core.tests.functional_fixtures import operator_for_tests
 
 
 class FeedDistributionApiTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="eleveur-alimentation")
+        self.owner = User.objects.create_user(username="owner-alimentation")
+        self.user = operator_for_tests(self.owner, 'eleveur-alimentation',
+            ['feed.create', 'feed.update', 'feed.delete'])
         self.other = User.objects.create_user(username="autre-alimentation")
         self.client = APIClient()
         self.client.force_authenticate(self.user)
@@ -127,5 +130,7 @@ class FeedDistributionApiTests(TestCase):
         )
         self.assertEqual(correction.status_code, 200, correction.data)
         self.assertEqual(correction.data["quantite_kg"], "26.000")
-        self.assertEqual(self.client.delete(path).status_code, 204)
-        self.assertEqual(ConsommationAliment.objects.count(), 0)
+        removed = self.client.delete(path)
+        self.assertEqual(removed.status_code, 400, removed.data)
+        self.assertIn('HISTORY_IMMUTABLE_USE_SUPPORTED_CANCELLATION', str(removed.data))
+        self.assertEqual(ConsommationAliment.objects.count(), 1)

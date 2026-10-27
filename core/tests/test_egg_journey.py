@@ -1,16 +1,31 @@
-from datetime import date
+from datetime import datetime, timezone as datetime_timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import User, Espece, Client, Lot, CategorieDepense, Depense
+from core.tests.functional_fixtures import operator_for_tests
 
 
 class EggJourneyTests(TestCase):
     def test_purchase_collection_sale_payment_statistics_and_tenant_isolation(self):
-        user = User.objects.create_user(username='journey')
+        self.run_journey()
+
+    def test_default_statistics_keep_local_day_after_midnight_before_utc_midnight(self):
+        instant=datetime(2026,10,7,22,30,tzinfo=datetime_timezone.utc)
+        with timezone.override('Europe/Paris'), patch('django.utils.timezone.now',return_value=instant), \
+                patch('core.views.now',return_value=instant):
+            # Same real purchase/collection/sale/cash journey; still expects the
+            # 5,000 margin without explicit dates, despite the UTC previous day.
+            self.run_journey()
+
+    def run_journey(self):
+        owner = User.objects.create_user(username='journey-owner')
+        user = operator_for_tests(owner, 'journey', ['purchases.create',
+            'egg_collections.create', 'egg_sales.create', 'cash.create', 'feed.create'])
         other = User.objects.create_user(username='other-journey')
         api = APIClient()
         api.force_authenticate(user)
@@ -65,6 +80,7 @@ class EggJourneyTests(TestCase):
         ]:
             self.assertEqual(api.get(path).status_code, 404, path)
             if 'statistiques' not in path:
-                self.assertEqual(api.delete(path).status_code, 404, path)
+                # Foreign OWNER is forbidden to mutate terrain, regardless of identity.
+                self.assertEqual(api.delete(path).status_code, 403, path)
         for path in ['collectes', 'ventes', 'alimentation']:
             self.assertEqual(api.get(f'/api/oeufs/{path}/').data, [])

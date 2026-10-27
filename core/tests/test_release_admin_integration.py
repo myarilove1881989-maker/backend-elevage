@@ -16,6 +16,8 @@ from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
 from core.egg_services import get_dated_egg_stock
+from core.tests.functional_fixtures import operator_for_tests
+
 from core.models import (
     Achat, CategorieDepense, Client, Depense, Espece, Exploitation,
     Lettrage, Lot, Mouvement, Payment, Task, User, Vente, VenteOeufs,
@@ -45,6 +47,9 @@ class ReleaseAdminIntegrationTests(TestCase):
         cls.root = User.objects.create_superuser(username="release-root", password=None)
         cls.owner = User.objects.create_user(username="release-owner")
         cls.other = User.objects.create_user(username="release-other")
+        cls.operator = operator_for_tests(cls.owner, "release-operator", [
+            "egg_collections.create", "egg_sales.create", "births.create",
+        ])
         cls.staff = User.objects.create_user(
             username="release-staff", is_staff=True, exploitation=cls.owner.exploitation,
         )
@@ -108,7 +113,7 @@ class ReleaseAdminIntegrationTests(TestCase):
             date_debut=cls.today - timedelta(days=30), type_production="OEUFS",
         )
         api = APIClient()
-        api.force_authenticate(cls.owner)
+        api.force_authenticate(cls.operator)
         collection = api.post("/api/oeufs/collectes/", {
             "lot": cls.eggs.pk, "nombre_collecte": 100,
             "collecte_at": (timezone.now() - timedelta(days=1)).isoformat(),

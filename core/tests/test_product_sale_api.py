@@ -7,6 +7,8 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.egg_services import get_dated_egg_stock, get_egg_stock
+from core.tests.functional_fixtures import operator_for_tests
+
 from core.models import (
     Achat, Client, CollecteOeufs, Espece, Lot, Mouvement,
     MouvementOeufs, User, Vente, VenteOeufs,
@@ -15,7 +17,12 @@ from core.models import (
 
 class ProductSaleApiTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="phase8")
+        self.owner = User.objects.create_user(username="phase8-owner")
+        self.user = operator_for_tests(self.owner, "phase8", [
+            "animal_sales.create", "animal_sales.delete", "mortality.create",
+            "donations.create", "thefts.create", "egg_sales.create", "egg_sales.delete",
+            "cash.create", "purchases.delete",
+        ])
         self.other = User.objects.create_user(username="phase8-other")
         self.api = APIClient()
         self.api.force_authenticate(self.user)
@@ -139,20 +146,38 @@ class ProductSaleApiTests(TestCase):
         self.assertEqual(Vente.objects.count(), 0)
         self.assertEqual(Mouvement.objects.filter(type_mouvement="VENTE").count(), 0)
 
-    def test_animal_deletion_targets_only_its_exact_sale_and_protects_payments(self):
+    def test_animal_deletion_is_refused_and_preserves_both_sales_and_payments(self):
+        from core.models import Payment, Lettrage
+
+        def ledger():
+            return {
+                model._meta.label: list(model.objects.order_by("pk").values())
+                for model in (Mouvement, Vente, Payment, Lettrage)
+            }
+
         first = self.animal_sale()
         second = self.animal_sale()
         first_sale_id, second_sale_id = first.vente_id, second.vente_id
+        before = ledger()
         deleted = self.api.delete(f"/api/mouvements/delete/{first.pk}/")
-        self.assertEqual(deleted.status_code, 200, deleted.data)
-        self.assertFalse(Vente.objects.filter(pk=first_sale_id).exists())
+        self.assertEqual(deleted.status_code, 400, deleted.data)
+        self.assertIn("HISTORY_IMMUTABLE_USE_SUPPORTED_CANCELLATION", str(deleted.data))
+        self.assertEqual(ledger(), before)
+        self.assertTrue(Vente.objects.filter(pk=first_sale_id).exists())
         self.assertTrue(Vente.objects.filter(pk=second_sale_id).exists())
-        self.assertEqual(self.chair.stock, 90)
-        self.api.post("/api/payments/create/", {
+        self.assertEqual(self.chair.stock, 80)
+        paid = self.api.post("/api/payments/create/", {
             "client": self.client.pk, "vente": second_sale_id, "montant": 1000,
         }, format="json")
-        self.assertEqual(self.api.delete(f"/api/mouvements/delete/{second.pk}/").status_code, 400)
+        self.assertEqual(paid.status_code, 201, paid.data)
+        paid_before = ledger()
+        paid_refusal = self.api.delete(f"/api/mouvements/delete/{second.pk}/")
+        self.assertEqual(paid_refusal.status_code, 400, paid_refusal.data)
+        self.assertIn("payée", str(paid_refusal.data).lower())
+        self.assertEqual(ledger(), paid_before)
+        self.assertTrue(Vente.objects.filter(pk=first_sale_id).exists())
         self.assertTrue(Vente.objects.filter(pk=second_sale_id).exists())
+        self.assertEqual(self.chair.stock, 80)
 
     def test_deleting_a_purchase_cannot_cascade_into_sales_and_payments(self):
         movement = self.animal_sale()
@@ -268,14 +293,29 @@ class ProductSaleApiTests(TestCase):
         self.assertEqual(Vente.objects.count(), 0)
         self.assertEqual(get_egg_stock(self.user.exploitation, self.eggs), 1000)
 
-    def test_explicit_allocation_works_and_deletion_restores_stock(self):
+    def test_explicit_allocation_is_preserved_when_deletion_is_refused(self):
+        from core.models import AffectationMouvementOeufs
+
         detail = self.egg_sale(affectations=[{"collecte": self.collection.pk, "quantite": 608}])
         stock = get_dated_egg_stock(self.user.exploitation, self.eggs)
         self.assertTrue(stock["origines_completes"])
         self.assertEqual(stock["collectes"][0]["restant"], 392)
-        self.assertEqual(self.api.delete(f"/api/oeufs/ventes/{detail.pk}/").status_code, 204)
-        self.assertEqual(get_egg_stock(self.user.exploitation, self.eggs), 1000)
-        self.assertEqual(Vente.objects.count(), 0)
+
+        def ledger():
+            return {
+                model._meta.label: list(model.objects.order_by("pk").values())
+                for model in (CollecteOeufs, Vente, VenteOeufs, MouvementOeufs,
+                              AffectationMouvementOeufs)
+            }
+
+        before = ledger()
+        response = self.api.delete(f"/api/oeufs/ventes/{detail.pk}/")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("HISTORY_IMMUTABLE_USE_SUPPORTED_CANCELLATION", str(response.data))
+        self.assertEqual(ledger(), before)
+        self.assertEqual(get_dated_egg_stock(self.user.exploitation, self.eggs), stock)
+        self.assertEqual(get_egg_stock(self.user.exploitation, self.eggs), 392)
+        self.assertEqual(Vente.objects.count(), 1)
 
     def test_payment_and_accounting_include_animal_and_egg_sales_once(self):
         animal = self.animal_sale()

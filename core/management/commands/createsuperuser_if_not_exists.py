@@ -1,7 +1,7 @@
 import os
 
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 
 class Command(BaseCommand):
@@ -9,7 +9,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         username = os.environ.get("DJANGO_SUPERUSER_USERNAME", "admin")
-        password = os.environ.get("DJANGO_SUPERUSER_PASSWORD", "admin123")
+        password = os.environ.get("DJANGO_SUPERUSER_PASSWORD")
+        if not password or not password.strip():
+            raise CommandError("DJANGO_SUPERUSER_PASSWORD must be explicitly set and non-empty.")
         email = os.environ.get("DJANGO_SUPERUSER_EMAIL", "admin@test.com")
 
         user_model = get_user_model()

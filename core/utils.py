@@ -1,13 +1,6 @@
-from django.db.models import Sum, Case, When, IntegerField, F
+"""Compatibility import for callers of the historical stock helper."""
+from .animal_stock import current_animal_stock
+
 
 def get_lot_stock(lot):
-    result = lot.mouvements.aggregate(
-        total=Sum(
-            Case(
-                When(type_mouvement='entree', then=F('quantite')),
-                When(type_mouvement='sortie', then=F('quantite') * -1),
-                output_field=IntegerField(),
-            )
-        )
-    )
-    return result['total'] or 0
+    return current_animal_stock(lot)

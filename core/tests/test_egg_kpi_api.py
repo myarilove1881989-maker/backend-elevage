@@ -12,6 +12,7 @@ from core.models import (
     Achat, CollecteOeufs, ConsommationAliment, Espece, Lot, Mouvement,
     MouvementOeufs, User,
 )
+from core.tests.functional_fixtures import operator_for_tests
 
 
 TODAY = date(2026, 9, 28)
@@ -21,7 +22,8 @@ PARIS = ZoneInfo("Europe/Paris")
 @override_settings(TIME_ZONE="Europe/Paris")
 class EggKpiApiTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="kpi-oeufs")
+        self.owner = User.objects.create_user(username="kpi-owner")
+        self.user = operator_for_tests(self.owner, "kpi-oeufs", ["egg_collections.create"])
         self.other = User.objects.create_user(username="kpi-autre")
         self.api = APIClient()
         self.api.force_authenticate(self.user)
@@ -40,6 +42,12 @@ class EggKpiApiTests(TestCase):
             lot=self.lot, exploitation=self.user.exploitation,
             date=date(2026, 1, 1), quantite=1000,
             prix_total=Decimal("100000"), prix_unitaire=Decimal("100"),
+        )
+        # The purchase document alone does not populate current animal stock.
+        Mouvement.objects.create(
+            lot=self.lot, exploitation=self.user.exploitation,
+            date=date(2026, 1, 1), type_mouvement="ACHAT", quantite=1000,
+            created_by=self.user,
         )
 
     @staticmethod
@@ -125,7 +133,12 @@ class EggKpiApiTests(TestCase):
             self.assertIsNone(empty[key], key)
         self.assertEqual(empty["stock_disponible"], 0)
 
-        self.purchase.delete()
+        # Zero birds is a ledger state; the purchase document stays intact.
+        Mouvement.objects.create(
+            lot=self.lot, exploitation=self.user.exploitation,
+            date=TODAY, type_mouvement="MORTALITE", quantite=1000,
+            created_by=self.user,
+        )
         self.collect(105)
         self.distribute("5.000")
         zero = self.kpi()
@@ -149,8 +162,12 @@ class EggKpiApiTests(TestCase):
         self.assertIsNone(result["taux_casse"])
 
     def test_unusual_rate_is_reported_without_capping(self):
-        self.purchase.quantite = 100
-        self.purchase.save(update_fields=["quantite"])
+        # Keep the entry and represent the remaining 100 birds with a signed exit.
+        Mouvement.objects.create(
+            lot=self.lot, exploitation=self.user.exploitation,
+            date=TODAY, type_mouvement="MORTALITE", quantite=900,
+            created_by=self.user,
+        )
         self.collect(105)
         result = self.kpi()
         self.assertEqual(result["taux_ponte"], 105.0)

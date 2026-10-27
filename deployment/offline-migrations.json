@@ -1,0 +1,703 @@
+{
+  "scope": "source graph only; no DB connection",
+  "historical_reference_not_live": true,
+  "core_source_count": 37,
+  "all_graph_nodes": [
+    [
+      "admin",
+      "0001_initial"
+    ],
+    [
+      "admin",
+      "0002_logentry_remove_auto_add"
+    ],
+    [
+      "admin",
+      "0003_logentry_add_action_flag_choices"
+    ],
+    [
+      "auth",
+      "0001_initial"
+    ],
+    [
+      "auth",
+      "0002_alter_permission_name_max_length"
+    ],
+    [
+      "auth",
+      "0003_alter_user_email_max_length"
+    ],
+    [
+      "auth",
+      "0004_alter_user_username_opts"
+    ],
+    [
+      "auth",
+      "0005_alter_user_last_login_null"
+    ],
+    [
+      "auth",
+      "0006_require_contenttypes_0002"
+    ],
+    [
+      "auth",
+      "0007_alter_validators_add_error_messages"
+    ],
+    [
+      "auth",
+      "0008_alter_user_username_max_length"
+    ],
+    [
+      "auth",
+      "0009_alter_user_last_name_max_length"
+    ],
+    [
+      "auth",
+      "0010_alter_group_name_max_length"
+    ],
+    [
+      "auth",
+      "0011_update_proxy_permissions"
+    ],
+    [
+      "auth",
+      "0012_alter_user_first_name_max_length"
+    ],
+    [
+      "contenttypes",
+      "0001_initial"
+    ],
+    [
+      "contenttypes",
+      "0002_remove_content_type_name"
+    ],
+    [
+      "core",
+      "0001_initial"
+    ],
+    [
+      "core",
+      "0002_client_exploitation_mouvement_created_by_and_more"
+    ],
+    [
+      "core",
+      "0003_lot_created_by"
+    ],
+    [
+      "core",
+      "0004_espece_exploitation"
+    ],
+    [
+      "core",
+      "0005_passwordresetcode"
+    ],
+    [
+      "core",
+      "0006_seed_species_catalog"
+    ],
+    [
+      "core",
+      "0007_client_pays_client_ville"
+    ],
+    [
+      "core",
+      "0008_lot_age_arrivee_semaines_lot_date_debut_ponte_and_more"
+    ],
+    [
+      "core",
+      "0009_mouvementoeufs_vente_oeufs"
+    ],
+    [
+      "core",
+      "0010_generaliser_consommation_aliment"
+    ],
+    [
+      "core",
+      "0011_peseeproduction"
+    ],
+    [
+      "core",
+      "0012_affectationmouvementoeufs"
+    ],
+    [
+      "core",
+      "0013_vente_oeufs_compose_et_lien_mouvement"
+    ],
+    [
+      "core",
+      "0014_mouvement_naissance"
+    ],
+    [
+      "core",
+      "0015_mouvement_lot_origine"
+    ],
+    [
+      "core",
+      "0016_client_created_by_depense_created_by_and_more"
+    ],
+    [
+      "core",
+      "0017_bootstrap_memberships"
+    ],
+    [
+      "core",
+      "0018_audit_append_only_postgresql"
+    ],
+    [
+      "core",
+      "0019_devicetransportchallenge_terrainsubmission_and_more"
+    ],
+    [
+      "core",
+      "0020_terrain_declaration_append_only"
+    ],
+    [
+      "core",
+      "0021_terrainentitymapping"
+    ],
+    [
+      "core",
+      "0022_exploitation_business_revision_and_more"
+    ],
+    [
+      "core",
+      "0023_alter_lettrage_montant_alter_payment_montant_and_more"
+    ],
+    [
+      "core",
+      "0024_cash_physical_receipt_immutable"
+    ],
+    [
+      "core",
+      "0025_terrain_decisions"
+    ],
+    [
+      "core",
+      "0026_terrain_decision_append_only"
+    ],
+    [
+      "core",
+      "0027_terrain_reversal_compensations"
+    ],
+    [
+      "core",
+      "0028_stock_compensation_append_only"
+    ],
+    [
+      "core",
+      "0029_terrain_nonstock_reversals"
+    ],
+    [
+      "core",
+      "0030_terrain_origin_reversals"
+    ],
+    [
+      "core",
+      "0031_terrain_client_archive"
+    ],
+    [
+      "core",
+      "0032_membershippermission_and_more"
+    ],
+    [
+      "core",
+      "0033_exploitationmembership_membership_role_active_owner_and_more"
+    ],
+    [
+      "core",
+      "0034_user_credential_version_and_more"
+    ],
+    [
+      "core",
+      "0035_task_cancellation_reason_task_cancelled_at_and_more"
+    ],
+    [
+      "core",
+      "0036_expense_cancellation_immutable"
+    ],
+    [
+      "core",
+      "0037_offline_business_revocation"
+    ],
+    [
+      "sessions",
+      "0001_initial"
+    ],
+    [
+      "token_blacklist",
+      "0001_initial"
+    ],
+    [
+      "token_blacklist",
+      "0002_outstandingtoken_jti_hex"
+    ],
+    [
+      "token_blacklist",
+      "0003_auto_20171017_2007"
+    ],
+    [
+      "token_blacklist",
+      "0004_auto_20171017_2013"
+    ],
+    [
+      "token_blacklist",
+      "0005_remove_outstandingtoken_jti"
+    ],
+    [
+      "token_blacklist",
+      "0006_auto_20171017_2113"
+    ],
+    [
+      "token_blacklist",
+      "0007_auto_20171017_2214"
+    ],
+    [
+      "token_blacklist",
+      "0008_migrate_to_bigautofield"
+    ],
+    [
+      "token_blacklist",
+      "0010_fix_migrate_to_bigautofield"
+    ],
+    [
+      "token_blacklist",
+      "0011_linearizes_history"
+    ],
+    [
+      "token_blacklist",
+      "0012_alter_outstandingtoken_user"
+    ],
+    [
+      "token_blacklist",
+      "0013_alter_blacklistedtoken_options_and_more"
+    ]
+  ],
+  "historical_nodes_assumed": [
+    [
+      "admin",
+      "0001_initial"
+    ],
+    [
+      "admin",
+      "0002_logentry_remove_auto_add"
+    ],
+    [
+      "admin",
+      "0003_logentry_add_action_flag_choices"
+    ],
+    [
+      "auth",
+      "0001_initial"
+    ],
+    [
+      "auth",
+      "0002_alter_permission_name_max_length"
+    ],
+    [
+      "auth",
+      "0003_alter_user_email_max_length"
+    ],
+    [
+      "auth",
+      "0004_alter_user_username_opts"
+    ],
+    [
+      "auth",
+      "0005_alter_user_last_login_null"
+    ],
+    [
+      "auth",
+      "0006_require_contenttypes_0002"
+    ],
+    [
+      "auth",
+      "0007_alter_validators_add_error_messages"
+    ],
+    [
+      "auth",
+      "0008_alter_user_username_max_length"
+    ],
+    [
+      "auth",
+      "0009_alter_user_last_name_max_length"
+    ],
+    [
+      "auth",
+      "0010_alter_group_name_max_length"
+    ],
+    [
+      "auth",
+      "0011_update_proxy_permissions"
+    ],
+    [
+      "auth",
+      "0012_alter_user_first_name_max_length"
+    ],
+    [
+      "contenttypes",
+      "0001_initial"
+    ],
+    [
+      "contenttypes",
+      "0002_remove_content_type_name"
+    ],
+    [
+      "core",
+      "0001_initial"
+    ],
+    [
+      "core",
+      "0002_client_exploitation_mouvement_created_by_and_more"
+    ],
+    [
+      "core",
+      "0003_lot_created_by"
+    ],
+    [
+      "core",
+      "0004_espece_exploitation"
+    ],
+    [
+      "core",
+      "0005_passwordresetcode"
+    ],
+    [
+      "core",
+      "0006_seed_species_catalog"
+    ],
+    [
+      "core",
+      "0007_client_pays_client_ville"
+    ],
+    [
+      "core",
+      "0008_lot_age_arrivee_semaines_lot_date_debut_ponte_and_more"
+    ],
+    [
+      "core",
+      "0009_mouvementoeufs_vente_oeufs"
+    ],
+    [
+      "core",
+      "0010_generaliser_consommation_aliment"
+    ],
+    [
+      "core",
+      "0011_peseeproduction"
+    ],
+    [
+      "core",
+      "0012_affectationmouvementoeufs"
+    ],
+    [
+      "core",
+      "0013_vente_oeufs_compose_et_lien_mouvement"
+    ],
+    [
+      "core",
+      "0014_mouvement_naissance"
+    ],
+    [
+      "core",
+      "0015_mouvement_lot_origine"
+    ],
+    [
+      "sessions",
+      "0001_initial"
+    ]
+  ],
+  "pending_from_historical_reference": [
+    [
+      "core",
+      "0016_client_created_by_depense_created_by_and_more"
+    ],
+    [
+      "core",
+      "0017_bootstrap_memberships"
+    ],
+    [
+      "core",
+      "0018_audit_append_only_postgresql"
+    ],
+    [
+      "core",
+      "0019_devicetransportchallenge_terrainsubmission_and_more"
+    ],
+    [
+      "core",
+      "0020_terrain_declaration_append_only"
+    ],
+    [
+      "core",
+      "0021_terrainentitymapping"
+    ],
+    [
+      "core",
+      "0022_exploitation_business_revision_and_more"
+    ],
+    [
+      "core",
+      "0023_alter_lettrage_montant_alter_payment_montant_and_more"
+    ],
+    [
+      "core",
+      "0024_cash_physical_receipt_immutable"
+    ],
+    [
+      "core",
+      "0025_terrain_decisions"
+    ],
+    [
+      "core",
+      "0026_terrain_decision_append_only"
+    ],
+    [
+      "core",
+      "0027_terrain_reversal_compensations"
+    ],
+    [
+      "core",
+      "0028_stock_compensation_append_only"
+    ],
+    [
+      "core",
+      "0029_terrain_nonstock_reversals"
+    ],
+    [
+      "core",
+      "0030_terrain_origin_reversals"
+    ],
+    [
+      "core",
+      "0031_terrain_client_archive"
+    ],
+    [
+      "core",
+      "0032_membershippermission_and_more"
+    ],
+    [
+      "core",
+      "0033_exploitationmembership_membership_role_active_owner_and_more"
+    ],
+    [
+      "core",
+      "0034_user_credential_version_and_more"
+    ],
+    [
+      "core",
+      "0035_task_cancellation_reason_task_cancelled_at_and_more"
+    ],
+    [
+      "core",
+      "0036_expense_cancellation_immutable"
+    ],
+    [
+      "core",
+      "0037_offline_business_revocation"
+    ],
+    [
+      "token_blacklist",
+      "0001_initial"
+    ],
+    [
+      "token_blacklist",
+      "0002_outstandingtoken_jti_hex"
+    ],
+    [
+      "token_blacklist",
+      "0003_auto_20171017_2007"
+    ],
+    [
+      "token_blacklist",
+      "0004_auto_20171017_2013"
+    ],
+    [
+      "token_blacklist",
+      "0005_remove_outstandingtoken_jti"
+    ],
+    [
+      "token_blacklist",
+      "0006_auto_20171017_2113"
+    ],
+    [
+      "token_blacklist",
+      "0007_auto_20171017_2214"
+    ],
+    [
+      "token_blacklist",
+      "0008_migrate_to_bigautofield"
+    ],
+    [
+      "token_blacklist",
+      "0010_fix_migrate_to_bigautofield"
+    ],
+    [
+      "token_blacklist",
+      "0011_linearizes_history"
+    ],
+    [
+      "token_blacklist",
+      "0012_alter_outstandingtoken_user"
+    ],
+    [
+      "token_blacklist",
+      "0013_alter_blacklistedtoken_options_and_more"
+    ]
+  ],
+  "core_source_hashes": {
+    "0001_initial": {
+      "sha256": "47bf7f1ef411c4ad92706c2dc2beb03c7cfec17e1fad9d9456c9af7f9112110a",
+      "canonical_lf_sha256": "1fb6917ee7aa8733ed6fe1d904e4b7a02b9e13aff03b8b0bd5c61e1fe6994b49"
+    },
+    "0002_client_exploitation_mouvement_created_by_and_more": {
+      "sha256": "b2fe7d32ab5d86b67622fd3066ad81e9082633f9aedc8813c6e76c746d24e32c",
+      "canonical_lf_sha256": "63a1f5e5c24b4aa19cac70400635121b9201436e54f1e9c5cd707a789dbc2cbd"
+    },
+    "0003_lot_created_by": {
+      "sha256": "1d3b76941f66cb8d9834684fd29cc558ce35c40a72e01278a70b24bf8543479e",
+      "canonical_lf_sha256": "12393d7c65d0d6d242b8899e24cc0d5e22b4a438fecb21c205ca91f4ec9d246f"
+    },
+    "0004_espece_exploitation": {
+      "sha256": "02b040a0ee9911bacc71ac33b2250a0c012363fa1e9f695fb103101e617bcf47",
+      "canonical_lf_sha256": "491f0dc4cd10a9f39a0cb4c291cf8f6705b6fde574cb256f261ac56631850de9"
+    },
+    "0005_passwordresetcode": {
+      "sha256": "ccc08bf35049a2b92d2f6ef4a9854aa0da5a6af3194b95bdf095ab5e4b63faa6",
+      "canonical_lf_sha256": "164c150be0e360d3979b031a8d05e743540b228da1c99a1e86f682df83f928a7"
+    },
+    "0006_seed_species_catalog": {
+      "sha256": "d17c5200e07f83276f1d91b25d92e9ac902182aad262b4f6e105bb5c1a27d890",
+      "canonical_lf_sha256": "85e6620c28cf2199231a36bddd392fa2e252ee4c8fdc0377a8e68a8b5a0660e0"
+    },
+    "0007_client_pays_client_ville": {
+      "sha256": "c2e2e020cad8ac7c84a57bdd90404364126f13b7256bc21b829e07ce1e004d55",
+      "canonical_lf_sha256": "5f0f38c6630c3b43f585accf5ecafbae521a484f357770ac72eff094d77a791b"
+    },
+    "0008_lot_age_arrivee_semaines_lot_date_debut_ponte_and_more": {
+      "sha256": "4d9fe33cbf8df1a51bef02c86cddb42c6b4a15df647cc084c3918e70dc08154b",
+      "canonical_lf_sha256": "37d3a6f9d300c5fa4f5b346acda445a82b28af615d7f8af110a2fbe9550097ac"
+    },
+    "0009_mouvementoeufs_vente_oeufs": {
+      "sha256": "b35fd8b5c21894cc07c26362c9498a989e41bb6ef619dc307bcb7a5c65d8bc4d",
+      "canonical_lf_sha256": "8bca2a01d62f95ad0e36d3f79678a36fbec2c0424bdeb1135b2598ffe6219e82"
+    },
+    "0010_generaliser_consommation_aliment": {
+      "sha256": "d8ceb3058c77de187dbe80b6a7ce1fbf88c4fe46fe48b007fd093d4a651e53e4",
+      "canonical_lf_sha256": "1898166b16ab6b307860b1e173ff8668dfdf4af3e66cbe7ea8e1a2d7804896d9"
+    },
+    "0011_peseeproduction": {
+      "sha256": "1f63068f0e02174424df83507117c0a1b5070c30f6b813c03c45bb7d8bfebd88",
+      "canonical_lf_sha256": "10b1eb6e8aebc7ac1565316ba98a329c59b85a1ee4b68414960fe58787b4765b"
+    },
+    "0012_affectationmouvementoeufs": {
+      "sha256": "0879e986b7dec085be101ba3c607811196dcba39f5a2a744c09dafbcc64e8223",
+      "canonical_lf_sha256": "9bd773e9107beeefaefef216aeff6ac68c7bd131690d3b7caf3f41ff08d9b464"
+    },
+    "0013_vente_oeufs_compose_et_lien_mouvement": {
+      "sha256": "44d936bf84fef96075bc74c9ecb3182f69f16bf46c02c73dc4247375b1513cf8",
+      "canonical_lf_sha256": "747d92e0c0c666b0dda5b2b70c3d7f4229d41a21751e671ccef7b9450b5ba9da"
+    },
+    "0014_mouvement_naissance": {
+      "sha256": "a8e9f4073b0bb635d5824a56fe663928db548e2d11c485df4e794816ec62fb40",
+      "canonical_lf_sha256": "51c1ca8129f989e8919b398a23487939690e0518de8331ac504af89a85642076"
+    },
+    "0015_mouvement_lot_origine": {
+      "sha256": "6d99ee2ce2e9100866a76c961dfb4394ac7287ab18f5dc3950d44f5322bd64ac",
+      "canonical_lf_sha256": "f5d8a1777eec37344361be1e40534fb974218b9e28fe5a533b0fc02fd7733e5a"
+    },
+    "0016_client_created_by_depense_created_by_and_more": {
+      "sha256": "2e2d3f9b105600c88e9406e050ee73c310a50c80609158a962c8c4ccf2c03d16",
+      "canonical_lf_sha256": "dd13ee0e3335c69760123b5be0e337efa12b75844401c97a6ef52ae8f0b0ad2a"
+    },
+    "0017_bootstrap_memberships": {
+      "sha256": "3c29c5cbee92dbe39e9448501cce3e69f9958fee86a68c7bdb0984af65c8f103",
+      "canonical_lf_sha256": "46d5fce49bd8b0ddb5a1dc36502fd9ac54cd73ac9c12047593bbc4ccd1ae46d1"
+    },
+    "0018_audit_append_only_postgresql": {
+      "sha256": "42ecb42e42b81561fa40a295a8c27867c7541292d81499e12f9bba76c6fc598e",
+      "canonical_lf_sha256": "059de13a1c0824da50ef524c205b029496144dc0f72c283b9abc323a58b11ac8"
+    },
+    "0019_devicetransportchallenge_terrainsubmission_and_more": {
+      "sha256": "4ba21a0bd39832068450737b29c5d3a5fdc6aaba5d4372430c4f664e13bb0ca9",
+      "canonical_lf_sha256": "1c3327fd06cb279e914946a64ea2bdf5e62fbab453f156feb6cd1fc78abdd984"
+    },
+    "0020_terrain_declaration_append_only": {
+      "sha256": "7ffdfba403d4d7072c7861bbfc5631f14fe9e93a329760901211a9b0c2f110c4",
+      "canonical_lf_sha256": "006b41f9412dc6d5ac043242ef08f9af3e9e0791bd12374abcb6e81136dadbdd"
+    },
+    "0021_terrainentitymapping": {
+      "sha256": "703865e8feb81a9a8388825c164c03e6d3c5660df21fc5b7f7def19c1728d6c9",
+      "canonical_lf_sha256": "7832e9786f213e4473be3d7f2258d2ad0e88d0ddac501f6a8433c839eb0c593e"
+    },
+    "0022_exploitation_business_revision_and_more": {
+      "sha256": "290ca259dff4053246777367491bc389421e1dca0578a4281285dc0d16c4defa",
+      "canonical_lf_sha256": "9a3fbd1b8c52d88af607430871c7c1c73d0bed4b0a08673a5c17cd2f88259044"
+    },
+    "0023_alter_lettrage_montant_alter_payment_montant_and_more": {
+      "sha256": "dc3376393e6c97b7da5c3d3a293ab7f8ad78edf942cab179e3857262aab9b4a4",
+      "canonical_lf_sha256": "2819c7a3e7159333b0df543ba699e8d9525a227caa0452e89ee88fc3a0955caa"
+    },
+    "0024_cash_physical_receipt_immutable": {
+      "sha256": "9a515860c8828759d66206a9c165b6871835126f4614182f9476a34302b003dd",
+      "canonical_lf_sha256": "bdd9eb5d9e1f77a60d150ff17ba24dfd23c905b38e08fc08970b05909618c112"
+    },
+    "0025_terrain_decisions": {
+      "sha256": "e78ee7e8c3660acb966ae76692fa5a152eb622d42e2c796728e5f21f36cd0e10",
+      "canonical_lf_sha256": "bf6f3b97f66f6efba06719972e4f004da9235b3705337779d463f9d0d6ff2286"
+    },
+    "0026_terrain_decision_append_only": {
+      "sha256": "52291c83b2ab1ac09804b00d6fa44e96cd766356de4b606abbfdc5cde3613612",
+      "canonical_lf_sha256": "46bfde3c5cbcd5332a53134c3568c923866919909c314bf607757c3f47c9c7b8"
+    },
+    "0027_terrain_reversal_compensations": {
+      "sha256": "5206cdcd41c3bafedc6f4022d9dcca78d0d732c12076c527e711f048f90c2bfd",
+      "canonical_lf_sha256": "511c5533980bc5a1d0fb1b411f3c8608bb7de640c8c3d4bab22635322e101219"
+    },
+    "0028_stock_compensation_append_only": {
+      "sha256": "cf184878bc076c145bc8a7112232a7c7dfa2f24603cd6d0ac63e9bc46f909717",
+      "canonical_lf_sha256": "d01ee19b8dea53e2928a81130a3da8ce7a1f719018b0727f45740ceecbaa1ad0"
+    },
+    "0029_terrain_nonstock_reversals": {
+      "sha256": "627ef61b046f9c2cd96a4a2209ca9f7611f449fcf3664774d8756b21eee0e781",
+      "canonical_lf_sha256": "0b74685fe337d6202b2bacab7b1fb438c3c40a40443e18041237a66cbdbc7fdf"
+    },
+    "0030_terrain_origin_reversals": {
+      "sha256": "50396ab1fdbcd5a728aec1c1fdfeb3243cd48132dac92b503baaf9b62e18f426",
+      "canonical_lf_sha256": "0ac5b6301e972def490c9dc96db2abe6941e5b5e4aac8773f63824470730f7b2"
+    },
+    "0031_terrain_client_archive": {
+      "sha256": "721d803d803929ef9883f69c3d5c206fe9bace1666ce4418e6a483bbb8c30b97",
+      "canonical_lf_sha256": "84fb84dfda6c49dc7923dbe4e1437da458ed8cf73569c5473906d6b59b7971bc"
+    },
+    "0032_membershippermission_and_more": {
+      "sha256": "18e4fcbd8890d676ec50850111fe5e460301c6e14b98bcfdd0ee2fe94d13866c",
+      "canonical_lf_sha256": "3e5ac4716dbe4f9bf55127d0136d95df7f74934932eff1804582cf95f5ba8e21"
+    },
+    "0033_exploitationmembership_membership_role_active_owner_and_more": {
+      "sha256": "f39389128f154f81ae3bcde9b29df8d617977a2da1231bc3255959db19a8ee4c",
+      "canonical_lf_sha256": "e8f91b81f3e5176c8b08988148527018c09fee4011d9254991cab74f6d9a3dc0"
+    },
+    "0034_user_credential_version_and_more": {
+      "sha256": "6bafc3a2692f68d656f45a34af753c9f457ebf69dc29fe4899b03e3e0c7b426e",
+      "canonical_lf_sha256": "8b3ee7dd49925c1bd9c10dceeaca0d2fa1e5ca5900c0a19e0f4fd2b46ec7cb8c"
+    },
+    "0035_task_cancellation_reason_task_cancelled_at_and_more": {
+      "sha256": "d5e4e1139ae5eca85733524936113d473f06cef8136560fd3233e27431642063",
+      "canonical_lf_sha256": "7326e6caf7b87f97f88c88d8ca21d3908f38b66131f8eb02344b412a077176a2"
+    },
+    "0036_expense_cancellation_immutable": {
+      "sha256": "2c5e84d3e2b88b6d6fc1bc97f8bd777122cff9054484d425e9f8c6375e10f7c3",
+      "canonical_lf_sha256": "2c5e84d3e2b88b6d6fc1bc97f8bd777122cff9054484d425e9f8c6375e10f7c3"
+    },
+    "0037_offline_business_revocation": {
+      "sha256": "4a7e09ce6d1e5f2cee71ecb3f6e675778ab48701f4709ad155f75344d057c0ca",
+      "canonical_lf_sha256": "bde5166870a9f0d536a83b892f1ba164ffa7859e66bd5e656327d002a3886b83"
+    }
+  },
+  "drift": {},
+  "guard_counters": {
+    "sqlite_memory_connections": 0,
+    "postgres_denied": 0,
+    "network_denied": 0
+  }
+}

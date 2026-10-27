@@ -4,7 +4,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
-from rest_framework.views import APIView 
+from rest_framework.views import APIView
 from django.db import transaction
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -20,14 +20,20 @@ import secrets
 # Django ORM
 from django.db.models import (
     IntegerField, Sum, F, Value, CharField,
-    Case, When, DecimalField, ExpressionWrapper, prefetch_related_objects
+    Case, When, DecimalField, ExpressionWrapper, prefetch_related_objects, OuterRef, Subquery
 )
 from django.db.models.functions import Coalesce
+
+
+def active_lot_money(model, field):
+    """Use operational facts, without multiplying sums across related joins."""
+    return Subquery(model.objects.filter(lot_id=OuterRef('pk')).order_by().values('lot_id')
+        .annotate(total=Sum(field)).values('total')[:1], output_field=DecimalField())
 
 # Django utils
 from django.utils.timezone import now
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.utils.dateparse import parse_date
 
 from .models import (
@@ -67,14 +73,8 @@ from .egg_kpis import get_laying_kpis
 # ===============================
 # 🔐 PERMISSION CUSTOM
 # ===============================
-class HasExploitation(BasePermission):
-    def has_permission(self, request, view):
-        return bool(
-            request.user
-            and request.user.is_authenticated
-            and getattr(request.user, "exploitation", None) is not None
-        )
-
+from .permissions import HasExploitation
+from .request_context import audited_endpoint
 
 # ===============================
 # LOT VIEWSET
@@ -94,36 +94,13 @@ class LotViewSet(ModelViewSet):
 # ===============================
 # TASK VIEWSET
 # ===============================
-class TaskViewSet(ModelViewSet):
-    queryset = Task.objects.all()
-    serializer_class = TaskSerializer
-    permission_classes = [IsAuthenticated, HasExploitation]  # 🔥 AJOUT
-
-    def get_queryset(self):
-        return Task.objects.filter(exploitation=self.request.user.exploitation)
-
-    def perform_create(self, serializer):
-        serializer.save(exploitation=self.request.user.exploitation)
+from .task_views import TaskViewSet
 # ===============================
 # UTILS (STOCK)
 # ===============================
 def get_lot_stock(lot):
-    total_achats = Achat.objects.filter(lot=lot).aggregate(
-        total=Sum('quantite')
-    )['total'] or 0
-
-    total_sorties = Mouvement.objects.filter(
-        lot=lot,
-        type_mouvement__in=['VENTE', 'MORTALITE', 'DON', 'VOL']
-    ).aggregate(
-        total=Sum('quantite')
-    )['total'] or 0
-
-    total_naissances = Mouvement.objects.filter(
-        lot=lot, type_mouvement='NAISSANCE',
-    ).aggregate(total=Sum('quantite'))['total'] or 0
-
-    return total_achats + total_naissances - total_sorties
+    from .animal_stock import current_animal_stock
+    return current_animal_stock(lot)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
@@ -270,6 +247,12 @@ def api_password_reset_confirm(request):
         return Response({"message": "Session expirée. Demandez un nouveau code."}, status=400)
 
     with transaction.atomic():
+        from .models import Exploitation, User
+        reset_user = User.objects.filter(pk=payload.get('user_id')).first()
+        if reset_user is None:
+            return Response({'message':'Session expirée.'},status=400)
+        Exploitation.objects.select_for_update().get(pk=reset_user.exploitation_id)
+        reset_user = User.objects.select_for_update().get(pk=reset_user.pk)
         reset_code = (
             PasswordResetCode.objects.select_for_update()
             .select_related("user")
@@ -292,8 +275,11 @@ def api_password_reset_confirm(request):
         except ValidationError as exc:
             return Response({"new_password": list(exc.messages)}, status=400)
 
-        reset_code.user.set_password(new_password)
-        reset_code.user.save(update_fields=["password"])
+        from .credential_services import validate_new_password, rotate_credentials
+        from .audit import audit_scope, ActorContext
+        validate_new_password(reset_user,new_password,must_differ=True)
+        with audit_scope(ActorContext(reset_user.pk,reset_user.exploitation_id)):
+            rotate_credentials(reset_user,password=new_password,initial_required=False)
         reset_code.used_at = timezone.now()
         reset_code.save(update_fields=["used_at"])
 
@@ -305,6 +291,7 @@ def api_password_reset_confirm(request):
 # ===============================
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_especes(request):
 
     exploitation = request.user.exploitation
@@ -386,6 +373,7 @@ def api_especes(request):
 # ===============================
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_dashboard(request):
 
     exploitation = request.user.exploitation
@@ -422,7 +410,7 @@ def api_dashboard(request):
             "marge": marge,
             "pertes": pertes,
             "performance": total_achats # optionnel
-            
+
         }
     })
 
@@ -432,6 +420,7 @@ def api_dashboard(request):
 # ===============================
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_lot_detail(request, pk):
 
     try:
@@ -501,6 +490,7 @@ def api_lot_detail(request, pk):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, HasExploitation])
 @transaction.atomic
+@audited_endpoint
 def api_create_mouvement(request):
 
     lot_id = request.data.get("lot")
@@ -613,6 +603,7 @@ def api_create_mouvement(request):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated, HasExploitation])
 @transaction.atomic
+@audited_endpoint
 def api_delete_mouvement(request, pk):
 
     try:
@@ -680,7 +671,7 @@ def get_client_balance(client):
         total=Sum('montant')
     )['total'] or 0
 
-    return float(total_ventes) - float(total_payments)
+    return total_ventes - total_payments
 
 
 # ===============================
@@ -688,7 +679,7 @@ def get_client_balance(client):
 # ===============================
 def auto_lettrage(client, payment):
 
-    restant = float(payment.montant)
+    restant = Decimal(str(payment.montant))
 
     ventes = client.ventes.order_by("date")
 
@@ -698,7 +689,7 @@ def auto_lettrage(client, payment):
             total=Sum('montant')
         )['total'] or 0
 
-        reste_vente = float(vente.montant_total) - float(total_lettre)
+        reste_vente = vente.montant_total - total_lettre
 
         if reste_vente <= 0:
             continue
@@ -722,6 +713,7 @@ def auto_lettrage(client, payment):
 # ===============================
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_client_balance(request, client_id):
 
     try:
@@ -747,6 +739,7 @@ def api_client_balance(request, client_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, HasExploitation])
 @transaction.atomic
+@audited_endpoint
 def api_create_payment(request):
 
     client_id = request.data.get("client")
@@ -779,8 +772,11 @@ def api_create_payment(request):
     # ===============================
 
     try:
-        montant = float(montant)
-    except (TypeError, ValueError):
+        montant = Decimal(str(montant))
+        if (not montant.is_finite() or montant > Decimal('9999999999.99') or
+                montant != montant.quantize(Decimal('0.01'))):
+            raise ValueError('Invalid monetary precision')
+    except (TypeError, ValueError, InvalidOperation):
         return Response(
             {"error": "Montant invalide"},
             status=400
@@ -818,8 +814,8 @@ def api_create_payment(request):
         )['total'] or 0
 
         reste_vente = (
-            float(vente.montant_total)
-            - float(total_lettrage)
+            vente.montant_total
+            - total_lettrage
         )
 
         # ===============================
@@ -905,6 +901,7 @@ def api_create_payment(request):
 # ===============================
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_client_ventes(request, client_id):
 
     try:
@@ -928,12 +925,12 @@ def api_client_ventes(request, client_id):
             total=Sum('montant')
         )['total'] or 0
 
-        reste = float(v.montant_total) - float(total_lettre)
+        reste = v.montant_total - total_lettre
 
         # 🔥 STATUT
         if reste == 0:
             statut = "PAYE"
-        elif reste < float(v.montant_total):
+        elif reste < v.montant_total:
             statut = "PARTIEL"
         else:
             statut = "IMPAYE"
@@ -969,6 +966,7 @@ def api_client_ventes(request, client_id):
 # ===============================
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_client_payments(request, client_id):
 
     try:
@@ -1000,15 +998,17 @@ def api_client_payments(request, client_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_stock_detail(request):
+    from django.db.models import Q
     lot_id = request.GET.get("lot")
     if not lot_id:
         return Response({"error": "Lot requis"}, status=400)
-    
+
     mouvements = Mouvement.objects.filter(
     lot_id=lot_id,
     lot__exploitation=request.user.exploitation
-)
+).filter(Q(exploitation=request.user.exploitation) | Q(exploitation__isnull=True))
 
     data = mouvements.aggregate(
         stock_initial=Sum(Case(When(type_mouvement__in=['ACHAT', 'NAISSANCE'], then=F('quantite')))),
@@ -1021,12 +1021,24 @@ def api_stock_detail(request):
     )
 
     data = {k: v or 0 for k, v in data.items()}
+    from .models import TerrainStockAdjustment
+    corrections = TerrainStockAdjustment.objects.filter(lot_id=lot_id,kind='ANIMAL',lot__exploitation=request.user.exploitation,
+        exploitation=request.user.exploitation)
+    # This endpoint is a current stock breakdown, not a dated ledger.
+    lot = Lot.objects.filter(pk=lot_id, exploitation=request.user.exploitation).first()
+    data['stock_restant'] = get_lot_stock(lot) if lot is not None else 0
+    categories = {'VENTE_ANIMAUX':'vendu','MORTALITE':'mortalite','DON':'don','VOL':'vol'}
+    for correction in corrections.values('submission__entity_type').annotate(total=Sum('signed_quantity')):
+        category = categories.get(correction['submission__entity_type'])
+        if category:
+            data[category] -= correction['total']
     data["perdu"] = data["mortalite"] + data["vol"] + data["don"]
 
     return Response(data)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_ca_par_lot(request):
     espece = request.GET.get("espece")
 
@@ -1066,6 +1078,7 @@ def api_ca_par_lot(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_marge_par_lot(request):
     espece = request.GET.get("espece")
 
@@ -1077,15 +1090,15 @@ def api_marge_par_lot(request):
         )
         .annotate(
             total_ca=Coalesce(
-                Sum('ventes__montant_total'),
+                active_lot_money(Vente, 'montant_total'),
                 Value(0, output_field=DecimalField())
             ),
             total_depenses=Coalesce(
-                Sum('depenses__montant'),
+                active_lot_money(Depense, 'montant'),
                 Value(0, output_field=DecimalField())
             ),
             total_achats=Coalesce(
-                Sum('achats__prix_total'),
+                active_lot_money(Achat, 'prix_total'),
                 Value(0, output_field=DecimalField())
             ),
         )
@@ -1123,6 +1136,7 @@ def api_marge_par_lot(request):
 # ===============================
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_lots(request):
     lots = Lot.objects.filter(exploitation=request.user.exploitation)
     return Response(LotSerializer(lots, many=True).data)
@@ -1130,6 +1144,7 @@ def api_lots(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_mouvements(request):
     mouvements = Mouvement.objects.filter(
         lot__exploitation=request.user.exploitation
@@ -1142,6 +1157,7 @@ def api_mouvements(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_depenses(request):
     depenses = Depense.objects.filter(
         lot__exploitation=request.user.exploitation
@@ -1154,6 +1170,7 @@ def api_depenses(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_achats(request):
     achats = Achat.objects.filter(
         exploitation=request.user.exploitation
@@ -1166,6 +1183,7 @@ def api_achats(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_depenses_detail(request):
     lot_id = request.GET.get("lot")
 
@@ -1188,6 +1206,7 @@ def api_depenses_detail(request):
 # ===============================
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_categories_depense(request):
     categories = CategorieDepense.objects.filter(
         exploitation=request.user.exploitation
@@ -1199,6 +1218,7 @@ def api_categories_depense(request):
 # ===============================
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_create_depense(request):
 
     lot_id = request.data.get("lot")
@@ -1244,6 +1264,7 @@ def api_create_depense(request):
 # ===============================
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_delete_depense(request, pk):
 
     try:
@@ -1267,8 +1288,8 @@ def api_delete_depense(request, pk):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_create_achat(request):
-    print("🔥 CREATE ACHAT CALLED")
 
     serializer = AchatSerializer(
         data=request.data,
@@ -1289,7 +1310,6 @@ def api_create_achat(request):
         }, status=201)
 
     except Exception as e:
-        print("🔥 ERREUR CREATE ACHAT:", str(e))
         traceback.print_exc()
 
         return Response({
@@ -1301,6 +1321,7 @@ def api_create_achat(request):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated, HasExploitation])
 @transaction.atomic
+@audited_endpoint
 def api_delete_achat(request, pk):
 
     try:
@@ -1337,6 +1358,7 @@ def api_delete_achat(request, pk):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def create_client(request):
     nom = request.data.get("nom")
     telephone = request.data.get("telephone")
@@ -1368,6 +1390,7 @@ def create_client(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_total_dettes(request):
 
     exploitation = request.user.exploitation
@@ -1394,6 +1417,7 @@ def api_total_dettes(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_dettes_clients(request):
 
     exploitation = request.user.exploitation
@@ -1448,6 +1472,7 @@ def api_dettes_clients(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_performance_lots(request):
 
     from django.db.models import Sum, F, Value, Case, When, DecimalField
@@ -1461,11 +1486,11 @@ def api_performance_lots(request):
         .filter(exploitation=exploitation)
         .annotate(
             total_ca=Coalesce(
-                Sum('ventes__montant_total'),
+                active_lot_money(Vente, 'montant_total'),
                 Value(0, output_field=DecimalField())
             ),
             total_depenses=Coalesce(
-                Sum('depenses__montant'),
+                active_lot_money(Depense, 'montant'),
                 Value(0, output_field=DecimalField())
             ),
         )
@@ -1496,6 +1521,7 @@ def api_performance_lots(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_performance_especes(request):
     """Classement par marge et saisonnalité des ventes par espèce."""
     from django.db.models.functions import TruncMonth
@@ -1589,6 +1615,7 @@ def _get_laying_lot(request, lot_id):
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_collectes_oeufs(request):
     if request.method == "POST":
         serializer = CollecteOeufsSerializer(
@@ -1634,6 +1661,7 @@ def api_collectes_oeufs(request):
 
 @api_view(["GET", "PATCH", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_collecte_oeufs_detail(request, pk):
     try:
         collection = CollecteOeufs.objects.select_related("lot").get(
@@ -1668,6 +1696,7 @@ def api_collecte_oeufs_detail(request, pk):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_stock_date_oeufs(request):
     lot_id = request.GET.get("lot")
     if not lot_id:
@@ -1680,6 +1709,7 @@ def api_stock_date_oeufs(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_kpi_oeufs(request):
     lot_id = request.GET.get("lot")
     if not lot_id:
@@ -1702,6 +1732,7 @@ def api_kpi_oeufs(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_statistiques_oeufs(request):
     lot_id = request.GET.get("lot")
     if not lot_id:
@@ -1712,8 +1743,9 @@ def api_statistiques_oeufs(request):
 
     date_debut_raw = request.GET.get("date_debut")
     date_fin_raw = request.GET.get("date_fin")
-    date_debut = parse_date(date_debut_raw) if date_debut_raw else now().date()
-    date_fin = parse_date(date_fin_raw) if date_fin_raw else now().date()
+    today = timezone.localdate()
+    date_debut = parse_date(date_debut_raw) if date_debut_raw else today
+    date_fin = parse_date(date_fin_raw) if date_fin_raw else today
     if date_debut is None or date_fin is None:
         return Response({"error": "Période invalide"}, status=400)
     if date_debut > date_fin:
@@ -1818,6 +1850,7 @@ def api_statistiques_oeufs(request):
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_consommations_aliment(request):
     if request.method == "POST":
         serializer = ConsommationAlimentSerializer(
@@ -1869,6 +1902,7 @@ def api_consommations_aliment(request):
 
 @api_view(["GET", "PATCH", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_consommation_aliment_detail(request, pk):
     try:
         consommation = ConsommationAliment.objects.select_related(
@@ -1946,6 +1980,7 @@ def _growth_tracking_payload(lot, request):
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_pesees_production(request):
     if request.method == "POST":
         try:
@@ -2002,6 +2037,7 @@ def api_pesees_production(request):
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_ventes_oeufs(request):
     if request.method == "POST":
         serializer = VenteOeufsSerializer(
@@ -2044,6 +2080,7 @@ def api_ventes_oeufs(request):
 
 @api_view(["GET", "DELETE"])
 @permission_classes([IsAuthenticated, HasExploitation])
+@audited_endpoint
 def api_vente_oeufs_detail(request, pk):
     try:
         vente_oeufs = VenteOeufs.objects.select_related(

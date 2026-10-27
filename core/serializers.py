@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.db import transaction
 from datetime import datetime, time
 from decimal import Decimal
 from .models import (
@@ -250,6 +251,12 @@ class AchatSerializer(serializers.ModelSerializer):
     nom_lot = serializers.CharField(write_only=True)
     espece = serializers.IntegerField(write_only=True)
 
+    def validate_espece(self, value):
+        if not Espece.objects.filter(pk=value,
+                exploitation_id=self.context['request'].user.exploitation_id).exists():
+            raise serializers.ValidationError('Espèce invalide pour cette exploitation.')
+        return value
+
     fournisseur = serializers.CharField(required=False, allow_blank=True)
     note = serializers.CharField(required=False, allow_blank=True)
     type_production = serializers.ChoiceField(
@@ -292,8 +299,12 @@ class AchatSerializer(serializers.ModelSerializer):
             "date_debut_ponte",
         )
 
+    @transaction.atomic
     def create(self, validated_data):
         user = self.context["request"].user
+
+        from .access_policy import authorize_business_service
+        authorize_business_service(user, user.exploitation_id, 'purchases.create')
 
         # 🔴 Vérification user exploitation (ICI c’est correct)
         if not getattr(user, "exploitation", None):
@@ -311,7 +322,7 @@ class AchatSerializer(serializers.ModelSerializer):
         date_debut_ponte = validated_data.pop("date_debut_ponte", None)
 
         try:
-            espece = Espece.objects.get(id=espece_id)
+            espece = Espece.objects.get(id=espece_id, exploitation_id=user.exploitation_id)
         except Espece.DoesNotExist:
             raise serializers.ValidationError("Espèce invalide")
 

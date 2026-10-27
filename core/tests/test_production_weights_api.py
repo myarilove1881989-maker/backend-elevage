@@ -5,11 +5,13 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from core.models import Achat, Espece, Lot, Mouvement, PeseeProduction, User
+from core.tests.functional_fixtures import operator_for_tests
 
 
 class ProductionWeightsApiTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="eleveur-pesees")
+        self.owner = User.objects.create_user(username="owner-pesees")
+        self.user = operator_for_tests(self.owner, 'eleveur-pesees', ['weights.create'])
         self.other = User.objects.create_user(username="autre-pesees")
         self.client = APIClient()
         self.client.force_authenticate(self.user)
@@ -29,6 +31,10 @@ class ProductionWeightsApiTests(TestCase):
             lot=self.lot, exploitation=self.user.exploitation, created_by=self.user,
             quantite=100, prix_total=Decimal("500"), prix_unitaire=Decimal("5"),
             date=date(2026, 9, 1),
+        )
+        Mouvement.objects.create(
+            lot=self.lot, exploitation=self.user.exploitation, created_by=self.user,
+            type_mouvement="ACHAT", quantite=100, date=date(2026, 9, 1),
         )
         Mouvement.objects.create(
             lot=self.lot, exploitation=self.user.exploitation, created_by=self.user,

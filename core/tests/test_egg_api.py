@@ -5,7 +5,8 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from core.models import Achat, CollecteOeufs, Espece, Lot, MouvementOeufs, User
+from core.models import Achat, CollecteOeufs, Espece, Lot, Mouvement, MouvementOeufs, User
+from core.tests.functional_fixtures import operator_for_tests
 
 
 class EggCollectionApiTests(TestCase):
@@ -41,7 +42,8 @@ class EggCollectionApiTests(TestCase):
         from datetime import timedelta
         from core.egg_services import get_hen_days
         today = timezone.localdate()
-        self.client.post('/api/oeufs/collectes/', self.collection_payload(), format='json')
+        collection = self.client.post('/api/oeufs/collectes/', self.collection_payload(), format='json')
+        self.assertEqual(collection.status_code, 201, collection.data)
         start = today - timedelta(days=6)
         self.assertEqual(get_hen_days(self.lot, start, today), 700)
         response = self.client.get(
@@ -51,6 +53,7 @@ class EggCollectionApiTests(TestCase):
 
     def test_sold_eggs_prevent_collection_reduction_or_deletion(self):
         response = self.client.post('/api/oeufs/collectes/', self.collection_payload(), format='json')
+        self.assertEqual(response.status_code, 201, response.data)
         pk = response.data['id']
         MouvementOeufs.objects.create(
             exploitation=self.user.exploitation, lot=self.lot,
@@ -64,7 +67,11 @@ class EggCollectionApiTests(TestCase):
         self.assertEqual(MouvementOeufs.objects.get(collecte_id=pk).quantite_signee, 70)
 
     def setUp(self):
-        self.user = User.objects.create_user(username="pondeur-api", password="test-pass")
+        self.owner = User.objects.create_user(username="pondeur-owner", password="test-pass")
+        self.user = operator_for_tests(self.owner, "pondeur-api", [
+            "egg_collections.create", "egg_collections.update",
+            "egg_collections.delete", "purchases.create",
+        ])
         self.client = APIClient()
         self.client.force_authenticate(self.user)
         self.espece = Espece.objects.create(
@@ -86,6 +93,12 @@ class EggCollectionApiTests(TestCase):
             prix_total=Decimal("100000.00"),
             prix_unitaire=Decimal("1000.00"),
             date=date(2026, 1, 1),
+            created_by=self.user,
+        )
+        # Current stock comes from the animal ledger, not the purchase document.
+        Mouvement.objects.create(
+            exploitation=self.user.exploitation, lot=self.lot,
+            type_mouvement="ACHAT", quantite=100, date=date(2026, 1, 1),
             created_by=self.user,
         )
 
@@ -186,6 +199,7 @@ class EggCollectionApiTests(TestCase):
             self.collection_payload(),
             format="json",
         )
+        self.assertEqual(create_response.status_code, 201, create_response.data)
         collection_id = create_response.data["id"]
         movement_id = MouvementOeufs.objects.get(collecte_id=collection_id).id
 
@@ -200,27 +214,41 @@ class EggCollectionApiTests(TestCase):
         self.assertEqual(movement.id, movement_id)
         self.assertEqual(movement.quantite_signee, 80)
 
-    def test_delete_collection_removes_automatic_stock_entry(self):
+    def test_delete_collection_is_refused_and_preserves_automatic_stock_entry(self):
         create_response = self.client.post(
             "/api/oeufs/collectes/",
             self.collection_payload(),
             format="json",
         )
+        self.assertEqual(create_response.status_code, 201, create_response.data)
         collection_id = create_response.data["id"]
 
+        def ledger():
+            return {
+                model._meta.label: list(model.objects.order_by("pk").values())
+                for model in (CollecteOeufs, MouvementOeufs)
+            }
+
+        before = ledger()
         response = self.client.delete(f"/api/oeufs/collectes/{collection_id}/")
 
-        self.assertEqual(response.status_code, 204)
-        self.assertFalse(CollecteOeufs.objects.filter(id=collection_id).exists())
-        self.assertFalse(MouvementOeufs.objects.filter(collecte_id=collection_id).exists())
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("HISTORY_IMMUTABLE_USE_SUPPORTED_CANCELLATION", str(response.data))
+        self.assertEqual(ledger(), before)
+        self.assertTrue(CollecteOeufs.objects.filter(id=collection_id).exists())
+        self.assertEqual(MouvementOeufs.objects.get(collecte_id=collection_id).quantite_signee, 70)
 
     def test_rejects_collection_for_another_tenant_lot(self):
-        other_user = User.objects.create_user(username="autre-api", password="test-pass")
+        other_owner = User.objects.create_user(username="autre-owner", password="test-pass")
+        other_user = operator_for_tests(other_owner, "autre-api", [
+            "egg_collections.create", "egg_collections.update", "egg_collections.delete",
+        ])
         response = self.client.post(
             "/api/oeufs/collectes/",
             self.collection_payload(),
             format="json",
         )
+        self.assertEqual(response.status_code, 201, response.data)
         own_collection_id = response.data["id"]
 
         other_client = APIClient()
@@ -262,11 +290,12 @@ class EggCollectionApiTests(TestCase):
         self.assertIn("lot", response.data)
 
     def test_statistics_use_live_birds_and_traceable_egg_stock(self):
-        self.client.post(
+        collection = self.client.post(
             "/api/oeufs/collectes/",
             self.collection_payload(),
             format="json",
         )
+        self.assertEqual(collection.status_code, 201, collection.data)
 
         today = timezone.localdate().isoformat()
         response = self.client.get(

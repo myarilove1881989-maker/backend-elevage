@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
+from core.tests.functional_fixtures import operator_for_tests
+
 from core.models import Espece
 from core.species_catalog import SPECIES_CATALOG
 
@@ -50,6 +52,8 @@ class SpeciesCatalogTests(APITestCase):
         )
 
     def test_custom_species_is_rejected(self):
+        operator = operator_for_tests(self.user, "catalogue-operator", ["species.create"])
+        self.client.force_authenticate(operator)
         response = self.client.post(
             "/api/especes/",
             {"nom": "Poule exotique"},

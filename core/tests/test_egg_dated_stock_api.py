@@ -6,6 +6,8 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.egg_services import affect_egg_exit
+from core.tests.functional_fixtures import operator_for_tests
+
 from core.models import (
     AffectationMouvementOeufs, Client, Espece, Lot, MouvementOeufs,
     User, Vente, VenteOeufs,
@@ -14,7 +16,11 @@ from core.models import (
 
 class DatedEggStockTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="stock-date", password="secret")
+        self.owner = User.objects.create_user(username="stock-date-owner", password="secret")
+        self.user = operator_for_tests(self.owner, "stock-date", [
+            "egg_collections.create", "egg_collections.update", "egg_collections.delete",
+            "egg_sales.create", "egg_sales.delete",
+        ])
         self.api = APIClient()
         self.api.force_authenticate(self.user)
         species = Espece.objects.create(nom="Poule", exploitation=self.user.exploitation)
@@ -90,10 +96,10 @@ class DatedEggStockTests(TestCase):
         self.assertEqual([row["restant"] for row in state["collectes"]], [0, 200, 0])
         self.assertEqual(state["stock_global"], 200)
 
-    def test_legacy_sale_keeps_global_stock_but_not_fictional_origins(self):
+    def test_legacy_sale_preserves_uncertain_origins_when_deletion_is_refused(self):
         self.collect(26, 8, 500)
         self.collect(27, 8, 700)
-        # Écriture Phase 8 historique : elle ne passe pas par le nouveau FIFO.
+        # Historical entry has no FIFO allocation; deletion must not invent origins.
         vente = Vente.objects.create(
             lot=self.lot, client=self.customer, date=date(2026, 9, 28),
             quantite=600, prix_unitaire=Decimal("100.00"),
@@ -117,10 +123,21 @@ class DatedEggStockTests(TestCase):
         self.assertEqual([row["restant"] for row in state["collectes"]], [None, None])
         self.assertEqual(VenteOeufs.objects.count(), 1)
 
+        def ledger():
+            return {
+                model._meta.label: list(model.objects.order_by("pk").values())
+                for model in (Vente, VenteOeufs, MouvementOeufs, AffectationMouvementOeufs)
+            }
+
+        before = ledger()
         deletion = self.api.delete(f"/api/oeufs/ventes/{sale.pk}/")
-        self.assertEqual(deletion.status_code, 204)
-        self.assertEqual(self.stock()["stock_global"], 1200)
-        self.assertTrue(self.stock()["origines_completes"])
+        self.assertEqual(deletion.status_code, 400, deletion.data)
+        self.assertIn("HISTORY_IMMUTABLE_USE_SUPPORTED_CANCELLATION", str(deletion.data))
+        self.assertEqual(ledger(), before)
+        self.assertEqual(self.stock(), state)
+        sale.refresh_from_db()
+        self.assertEqual(sale.montant_total, Decimal("60000.00"))
+        self.assertFalse(AffectationMouvementOeufs.objects.exists())
 
     def test_historical_production_and_loss_without_origin_are_visible_as_uncertain(self):
         self.collect(26, 8, 100)
@@ -168,16 +185,27 @@ class DatedEggStockTests(TestCase):
         self.assertEqual(self.stock()["collectes"][0]["restant"], 0)
         self.assertEqual(self.stock()["stock_global"], 0)
 
-    def test_deleting_unpaid_allocated_sale_restores_original_collection(self):
+    def test_unpaid_allocated_sale_deletion_is_refused_and_preserves_origin(self):
         collection = self.collect(26, 8, 100)
         sale = self.sell(100, [{"collecte": collection, "quantite": 100}])
         self.assertEqual(sale.status_code, 201, sale.data)
-        self.assertEqual(self.stock()["collectes"][0]["restant"], 0)
+        state = self.stock()
+        self.assertEqual(state["collectes"][0]["restant"], 0)
+
+        def ledger():
+            return {
+                model._meta.label: list(model.objects.order_by("pk").values())
+                for model in (Vente, VenteOeufs, MouvementOeufs, AffectationMouvementOeufs)
+            }
+
+        before = ledger()
         response = self.api.delete(f"/api/oeufs/ventes/{sale.data['id']}/")
-        self.assertEqual(response.status_code, 204)
-        self.assertEqual(AffectationMouvementOeufs.objects.count(), 0)
-        self.assertEqual(self.stock()["collectes"][0]["restant"], 100)
-        self.assertEqual(self.stock()["stock_global"], 100)
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("HISTORY_IMMUTABLE_USE_SUPPORTED_CANCELLATION", str(response.data))
+        self.assertEqual(ledger(), before)
+        self.assertEqual(AffectationMouvementOeufs.objects.count(), 1)
+        self.assertEqual(self.stock(), state)
+        self.assertEqual(self.stock()["stock_global"], 0)
 
     def test_mismatched_production_entries_never_claim_exact_origins(self):
         a = self.collect(26, 8, 100)
@@ -203,7 +231,10 @@ class DatedEggStockTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(VenteOeufs.objects.count(), 0)
 
-        other = User.objects.create_user(username="other-stock", password="secret")
+        other_owner = User.objects.create_user(username="other-stock-owner", password="secret")
+        other = operator_for_tests(other_owner, "other-stock", [
+            "egg_collections.create", "egg_collections.update", "egg_collections.delete",
+        ])
         species = Espece.objects.create(nom="Poule B", exploitation=other.exploitation)
         other_lot = Lot.objects.create(
             exploitation=other.exploitation, espece=species, nom="Ponte B",
