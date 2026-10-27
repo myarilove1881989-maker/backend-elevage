@@ -19,6 +19,7 @@ from core.pilot_checks import verify_database
 class Command(BaseCommand):
     help = 'Validate pilot HTTPS/JWT and the configured signing key without running global regression fixtures.'
 
+    @override_settings(PILOT_RESET_MAIL_AUTOMATIC=False)
     def handle(self, *args, **options):
         identity = verify_database()
         self.stdout.write('PILOT_SMOKE_IDENTITY ' + json.dumps(identity, sort_keys=True))
@@ -30,8 +31,10 @@ class Command(BaseCommand):
             raise CommandError('PILOT_SMOKE: HTTP upgrade failed')
         if client.get('/api/pilot-health/', secure=True, HTTP_HOST='backend-elevage.onrender.com').status_code != 400:
             raise CommandError('PILOT_SMOKE: production host accepted')
-        login = client.post('/api/token/', {'username':'pilot-owner',
-            'password':os.environ['PILOT_OWNER_PASSWORD']}, format='json', secure=True)
+        # The owner's password is user-controlled after a password reset.
+        # Exercise login with the unchanged fictitious operator instead.
+        login = client.post('/api/token/', {'username':'pilot-operator',
+            'password':os.environ['PILOT_OPERATOR_PASSWORD']}, format='json', secure=True)
         if login.status_code != 200:
             raise CommandError('PILOT_SMOKE: login failed')
         client.credentials(HTTP_AUTHORIZATION='Bearer ' + login.data['access'])

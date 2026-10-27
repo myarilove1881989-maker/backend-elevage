@@ -14,6 +14,7 @@ except ValueError as error:
 from .settings import *  # noqa: F403,E402
 
 APP_ENV = 'pilot'
+PILOT_RESET_MAIL_AUTOMATIC = os.environ.get('PILOT_RESET_MAIL_AUTOMATIC', 'false').lower() == 'true'
 DEBUG = False
 ALLOWED_HOSTS = [_web_host]
 ROOT_URLCONF = 'config.pilot_urls'

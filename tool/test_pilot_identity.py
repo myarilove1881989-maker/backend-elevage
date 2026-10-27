@@ -11,6 +11,14 @@ from core.management.commands import pilot_deploy
 
 
 class PilotIdentityTests(unittest.TestCase):
+    def test_owner_email_must_match_explicit_configuration(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(pilot_deploy.expected_owner_email(), 'pilot-owner@example.invalid')
+        with patch.dict(os.environ, PILOT_OWNER_EMAIL='owner@example.test'):
+            self.assertEqual(pilot_deploy.expected_owner_email(), 'owner@example.test')
+        with patch.dict(os.environ, PILOT_OWNER_EMAIL='invalid'), self.assertRaises(CommandError):
+            pilot_deploy.expected_owner_email()
+
     def verify(self, *, vendor='postgresql', host='dpg-synthetic-a', name='elevage_pilot',
                role='elevage_pilot_owner', row=('elevage_pilot','elevage_pilot_owner','18.4'),
                module='config.pilot_settings'):

@@ -7,10 +7,22 @@ from django.db import connection, transaction
 from core.pilot_checks import verify_database
 
 
+def expected_owner_email():
+    from django.core.exceptions import ValidationError
+    from django.core.validators import validate_email
+    value = os.environ.get('PILOT_OWNER_EMAIL', 'pilot-owner@example.invalid').strip().lower()
+    try:
+        validate_email(value)
+    except ValidationError:
+        raise CommandError('PILOT_FIXTURES: invalid configured owner email') from None
+    return value
+
+
 class Command(BaseCommand):
     help = 'Verify pilot identity, migrate under a session lock, create fictitious accounts, run checks.'
 
     def handle(self, *args, **options):
+        owner_email = expected_owner_email()
         identity = verify_database()
         self.stdout.write('PILOT_DATABASE_BEFORE ' + json.dumps(identity, sort_keys=True))
         if identity['tables'] and 'django_migrations' not in identity['tables']:
@@ -34,7 +46,7 @@ class Command(BaseCommand):
                 owner = User.objects.filter(username='pilot-owner').first()
                 if owner is None:
                     owner = User.objects.create_user(username='pilot-owner',
-                        password=os.environ['PILOT_OWNER_PASSWORD'], email='pilot-owner@example.invalid')
+                        password=os.environ['PILOT_OWNER_PASSWORD'], email=owner_email)
                     farm = owner.exploitation
                     farm.nom = 'PILOTE — Ferme fictive'
                     farm.save(update_fields=['nom'])
@@ -42,7 +54,7 @@ class Command(BaseCommand):
                     Lot.objects.create(nom='PILOTE Lot fictif', exploitation=farm, espece=species,
                         date_debut='2026-10-10', type_production='OEUFS', statut_production='PONTE')
                     Client.objects.create(nom='PILOTE Client fictif', exploitation=farm)
-                if owner.email != 'pilot-owner@example.invalid' or owner.is_staff or owner.is_superuser:
+                if owner.email != owner_email or owner.is_staff or owner.is_superuser:
                     raise CommandError('PILOT_FIXTURES: unexpected owner')
                 operator = User.objects.filter(username='pilot-operator').first()
                 if operator is None:

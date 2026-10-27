@@ -25,13 +25,14 @@ class PopulatedPilotSmokeTests(TransportFixture, TestCase):
             response, _ = self.send(self.operation())
         self.assertEqual(response.status_code, 200, response.data)
         password = 'Synthetic-pilot-probe-password-only-0123456789'
-        User.objects.create_user(username='pilot-owner', password=password)
+        owner = User.objects.create_user(username='pilot-owner', password='Owner-password-changed-by-user-0123456789')
+        User.objects.create_user(username='pilot-operator', password=password, exploitation=owner.exploitation)
         key = Ed25519PrivateKey.generate().private_bytes(
             serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
             serialization.NoEncryption()).decode('ascii')
         row = TerrainSubmission.objects.get()
         before = (User.objects.count(), DeviceRegistration.objects.count(), TerrainSubmission.objects.count())
-        with patch.dict(os.environ, PILOT_OWNER_PASSWORD=password), \
+        with patch.dict(os.environ, PILOT_OWNER_PASSWORD='old-owner-password-no-longer-valid', PILOT_OPERATOR_PASSWORD=password), \
              patch('core.management.commands.pilot_smoke.verify_database', return_value={'local_test': True}), \
              override_settings(OFFLINE_SIGNING_PRIVATE_KEY=key):
             for _ in range(2):
