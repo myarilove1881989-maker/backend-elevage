@@ -7,10 +7,20 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from django.core.management.base import CommandError
 from core import pilot_checks
-from core.management.commands import pilot_deploy
+from core.management.commands import pilot_deploy, pilot_smoke
 
 
 class PilotIdentityTests(unittest.TestCase):
+    def test_smoke_checks_real_identity_before_settings_override(self):
+        from django.conf import settings
+        original_module = settings.SETTINGS_MODULE
+        def stop_at_identity():
+            self.assertEqual(settings.SETTINGS_MODULE, original_module)
+            raise CommandError('identity-stop')
+        with patch.object(pilot_smoke, 'verify_database', side_effect=stop_at_identity):
+            with self.assertRaisesRegex(CommandError, 'identity-stop'):
+                pilot_smoke.Command().handle()
+
     def test_owner_email_must_match_explicit_configuration(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(pilot_deploy.expected_owner_email(), 'pilot-owner@example.invalid')

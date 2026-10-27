@@ -19,9 +19,14 @@ from core.pilot_checks import verify_database
 class Command(BaseCommand):
     help = 'Validate pilot HTTPS/JWT and the configured signing key without running global regression fixtures.'
 
-    @override_settings(PILOT_RESET_MAIL_AUTOMATIC=False)
     def handle(self, *args, **options):
         identity = verify_database()
+        # UserSettingsHolder deliberately masks SETTINGS_MODULE. Verify the
+        # real identity before any test-only override, preserving the guard.
+        with override_settings(PILOT_RESET_MAIL_AUTOMATIC=False):
+            self._run_checks(identity)
+
+    def _run_checks(self, identity):
         self.stdout.write('PILOT_SMOKE_IDENTITY ' + json.dumps(identity, sort_keys=True))
         host = settings.ALLOWED_HOSTS[0]
         client = APIClient(HTTP_HOST=host)
