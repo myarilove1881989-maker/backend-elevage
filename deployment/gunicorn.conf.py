@@ -13,6 +13,8 @@ timeout = 30
 graceful_timeout = 25
 preload_app = False
 # Keep query strings, credentials and tokens out of access logs.
-accesslog = None
+accesslog = '-'
+# Path only: never log request bodies, query strings, IPs or authentication headers.
+access_log_format = '%(m)s %(U)s %(s)s'
 errorlog = "-"
 capture_output = False
