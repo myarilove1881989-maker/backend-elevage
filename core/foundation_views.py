@@ -117,6 +117,7 @@ def capabilities(request):
     from .access_policy import permission_contract
     return Response({'user': request.user.pk, 'exploitation': member.exploitation_id,
                      'user_administration_contract': 1,
+                     'credential_version': request.user.credential_version,
                      'permission_contract': permission_contract(request.user),
                      'role': member.role, 'membership': MemberSerializer(member).data,
                      'offline_permission_contract': {'supported_versions': [2],
@@ -350,6 +351,12 @@ def offline_authorization(request):
         return Response({'detail': 'OFFLINE_SIGNING_KEY_INVALID'}, status=503)
     with transaction.atomic():
         farm = Exploitation.objects.select_for_update().get(pk=member.exploitation_id)
+        # Authentication happened before the farm lock. A concurrent credential
+        # rotation must not issue a fresh grant to the old online session.
+        authenticated_version = request.user.credential_version
+        request.user.refresh_from_db()
+        if request.user.credential_version != authenticated_version:
+            raise PermissionDenied('SESSION_REVOKED')
         member = require_member(request.user)
         device = verify_request_device(request, purpose='GRANT', primary=True)
         request.verified_device = device
@@ -393,6 +400,7 @@ def issue_grant(request, member, farm, device, key):
                    'jti': str(grant.pk), 'sub': str(request.user.pk), 'membership_id': member.pk,
                    'exploitation_id': farm.pk, 'device_id': device.pk, 'capabilities': caps,
                    'rights_version': member.version, 'write_generation': farm.write_generation,
+                   'credential_version': request.user.credential_version,
                    'iat': int(grant.issued_at.timestamp()), 'exp': int(grant.expires_at.timestamp())}
         token = jwt.encode(payload, key, algorithm='EdDSA', headers={'kid': settings.OFFLINE_SIGNING_KEY_ID})
         public = key.public_key().public_bytes(serialization.Encoding.PEM,

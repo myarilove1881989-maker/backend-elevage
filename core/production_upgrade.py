@@ -49,6 +49,8 @@ def upgrade():
     os.environ['APP_ENV'] = 'production'
     import django
     django.setup()
+    from .offline_readiness import report
+    report()
     from django.core.management import call_command
     from django.db import connection, transaction
     from django.db.migrations.executor import MigrationExecutor
