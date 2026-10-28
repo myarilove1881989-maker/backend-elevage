@@ -32,6 +32,29 @@ class ActivationTests(SimpleTestCase):
 
 class Android107PreparationTests(MobileFoundationsTests):
     @override_settings(OFFLINE_FINE_PERMISSIONS_ENABLED=True)
+    def test_small_tablet_clock_lag_fits_signed_window_without_extending_lifetime(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from core.foundation_views import issue_grant
+        from types import SimpleNamespace
+        self.enable()
+        server_now = timezone.now()
+        request = SimpleNamespace(user=self.jean, verified_device=self.device,
+            data={'permission_contract_version': 2}, headers={})
+        member = self.jean.memberships.get(exploitation=self.farm)
+        server = Ed25519PrivateKey.generate()
+        with patch('core.foundation_views.timezone.now', return_value=server_now):
+            result = issue_grant(request, member, self.farm, self.device, server)
+        claims = jwt.decode(result.data['authorization'], server.public_key(), algorithms=['EdDSA'],
+            audience='elevage-device', issuer='elevage-offline')
+        self.assertEqual(claims['iat'], int((server_now-timedelta(seconds=5)).timestamp()))
+        self.assertLessEqual(claims['iat'], (server_now-timedelta(seconds=1.2)).timestamp())
+        self.assertEqual(claims['exp']-claims['iat'], 168*3600)
+        self.assertLessEqual(claims['exp'], (server_now+timedelta(hours=168)).timestamp())
+        contract = claims['capabilities']['permission_contract']
+        self.assertEqual((contract['iat'],contract['exp']), (claims['iat'],claims['exp']))
+
+    @override_settings(OFFLINE_FINE_PERMISSIONS_ENABLED=True)
     def test_rotation_between_authentication_and_farm_lock_refuses_issuance(self):
         from core.models import User, OfflineAuthorization
         self.enable()

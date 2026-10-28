@@ -386,7 +386,10 @@ def issue_grant(request, member, farm, device, key):
             hours = getattr(settings, 'OFFLINE_FINE_AUTHORIZATION_HOURS', 168)
             if type(hours) is not int or not 1 <= hours <= 168:
                 raise ValidationError('OFFLINE_FINE_WINDOW_INVALID')
-            now = timezone.now()
+            # Android 107 enforces iat without leeway. Account for a small
+            # device clock lag in the signed window itself, never in signature
+            # verification. Expiry moves equally: lifetime never exceeds 168h.
+            now = timezone.now() - timedelta(seconds=5)
             grant = OfflineAuthorization(membership=member, device=device, capabilities=caps,
                 rights_version=member.version, write_generation=farm.write_generation,
                 issued_at=now, expires_at=now + timedelta(hours=hours))
