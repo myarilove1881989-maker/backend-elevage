@@ -1,0 +1,1 @@
+Controlled fallback: original production c14f489 business code plus additive 0038 model/migration definitions and the qualified 0038-compatible startup guard. No automatic deployment. Stop email job and coordinate Web rollback. Never drop tables or restore production data without separate approval. Guard for already-applied 0038 is the same tested guard as the release candidate.
