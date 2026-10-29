@@ -4,6 +4,7 @@ import argparse, json, os, pathlib, secrets, socket, subprocess, sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('--postgres', action='store_true')
+parser.add_argument('--ci-postgres', action='store_true')
 parser.add_argument('--pg-bin', default='C:/Program Files/PostgreSQL/18/bin')
 parser.add_argument('labels', nargs='*')
 args = parser.parse_args()
@@ -39,6 +40,11 @@ if args.postgres:
             raise SystemExit('Test port already in use; no existing server is modified')
     run([pg / 'pg_ctl.exe', '-D', cluster / 'data', '-l', cluster / 'server.log', '-w', 'start'], 'start')
     db = {'ENGINE': 'django.db.backends.postgresql', 'HOST': '127.0.0.1', 'PORT': 57831, 'NAME': 'postgres', 'USER': cfg['user'], 'PASSWORD': cfg['password'], 'TEST': {'NAME': 'test_elevage_dev'}}
+
+if args.ci_postgres:
+    if args.postgres or os.environ.get('GITHUB_ACTIONS') != 'true':
+        raise SystemExit('CI PostgreSQL mode requires GitHub Actions')
+    db = {'ENGINE': 'django.db.backends.postgresql', 'HOST': '127.0.0.1', 'PORT': 5432, 'NAME': 'postgres', 'USER': 'elevage_test', 'PASSWORD': 'synthetic-ci-only-password', 'TEST': {'NAME': 'test_elevage_dev'}}
 
 original_connect = socket.socket.connect
 def local_only(sock, address):
