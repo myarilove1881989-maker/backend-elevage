@@ -1,6 +1,6 @@
 from urllib import request
 
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
@@ -133,19 +133,28 @@ PASSWORD_RESET_RESPONSE = {
     "message": "Si cette adresse est associée à un compte, un code a été envoyé."
 }
 PASSWORD_RESET_SALT = "elevage.password-reset"
+from .reset_limits import allow_reset
 
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@authentication_classes([])
+@transaction.atomic
 def api_password_reset_request(request):
     email = str(request.data.get("email", "")).strip().lower()
     if not email:
         return Response({"email": "Adresse e-mail requise."}, status=400)
 
+    if not allow_reset(request, email, "request"):
+        return Response(PASSWORD_RESET_RESPONSE)
+    # Equal expensive hash work for known, unknown and cooldown addresses.
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    code_hash = make_password(code)
     user = get_user_model().objects.filter(email__iexact=email, is_active=True).first()
     if user is None:
         return Response(PASSWORD_RESET_RESPONSE)
 
+    user = get_user_model().objects.select_for_update().get(pk=user.pk)
     # Un seul envoi par minute pour un même compte.
     recent_code = PasswordResetCode.objects.filter(
         user=user,
@@ -158,47 +167,36 @@ def api_password_reset_request(request):
         used_at=timezone.now()
     )
 
-    code = f"{secrets.randbelow(1_000_000):06d}"
     reset_code = PasswordResetCode.objects.create(
         user=user,
-        code_hash=make_password(code),
+        code_hash=code_hash,
         expires_at=timezone.now() + timedelta(minutes=10),
     )
 
-    try:
-        send_mail(
-            subject="Code de réinitialisation Elev’Age",
-            message=(
-                f"Votre code de réinitialisation est : {code}\n\n"
-                "Ce code expire dans 10 minutes. Si vous n'êtes pas à l'origine "
-                "de cette demande, ignorez cet e-mail."
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False,
-        )
-    except Exception:
-        reset_code.delete()
-        return Response(
-            {"message": "L'envoi de l'e-mail a échoué. Réessayez plus tard."},
-            status=503,
-        )
+    from .models import PasswordResetEmail
+    from .reset_mail import cipher
+    PasswordResetEmail.objects.create(
+        code=reset_code, encrypted_code=cipher().encrypt(code.encode('ascii')))
 
     return Response(PASSWORD_RESET_RESPONSE)
 
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@transaction.atomic
+@authentication_classes([])
 def api_password_reset_verify(request):
     email = str(request.data.get("email", "")).strip().lower()
     code = str(request.data.get("code", "")).strip()
 
+    if not allow_reset(request, email, "verify"):
+        return Response({"message": "Réessayez plus tard."}, status=429)
     if not email or len(code) != 6 or not code.isdigit():
         return Response({"message": "Code invalide ou expiré."}, status=400)
 
     user = get_user_model().objects.filter(email__iexact=email, is_active=True).first()
     reset_code = (
-        PasswordResetCode.objects.filter(user=user, used_at__isnull=True)
+        PasswordResetCode.objects.select_for_update().filter(user=user, used_at__isnull=True)
         .first()
         if user
         else None
@@ -220,6 +218,9 @@ def api_password_reset_verify(request):
             reset_code.save(update_fields=["attempts"])
         return Response({"message": "Code invalide ou expiré."}, status=400)
 
+    # Burn the low-entropy code when exchanged for the signed credential.
+    reset_code.code_hash = make_password(None)
+    reset_code.save(update_fields=["code_hash"])
     reset_token = signing.dumps(
         {"user_id": user.pk, "code_id": reset_code.pk},
         salt=PASSWORD_RESET_SALT,
@@ -229,6 +230,7 @@ def api_password_reset_verify(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@authentication_classes([])
 def api_password_reset_confirm(request):
     email = str(request.data.get("email", "")).strip().lower()
     reset_token = str(request.data.get("reset_token", "")).strip()
@@ -263,6 +265,7 @@ def api_password_reset_confirm(request):
         if (
             reset_code is None
             or not reset_code.is_valid
+            or not reset_code.user.is_active
             or reset_code.user.email.lower() != email
         ):
             return Response(
