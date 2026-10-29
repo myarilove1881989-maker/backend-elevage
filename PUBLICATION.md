@@ -1,25 +1,23 @@
-# Publication contrÃ´lÃ©e et retour arriÃ¨re
+# Publication Web 113 — procédure contrôlée
 
-Aucune publication dans cette mission. DÃ©veloppement sur D:, source officielle sur GitHub, production sur Render. Une PR vers develop nâ€™est pas une autorisation de publication.
+La production reste inchangée jusqu’à l’accord explicite de publication. Les branches de travail et develop ne déploient rien.
 
-## Backend Django
-RÃ©fÃ©rence production vÃ©rifiÃ©e le 29 octobre 2026 : c14f4899c06087508aa4ba7604de35decc74f94a, branche codex/android-users-compatibility-20261027, dÃ©ploiement automatique dÃ©sactivÃ©. La commande de dÃ©marrage existante exÃ©cute core.production_upgrade : toute livraison backend peut donc entraÃ®ner des Ã©critures/migrations et nÃ©cessite un accord distinct et explicite. Ne pas changer ces paramÃ¨tres pendant le dÃ©veloppement.
+## Backend
+La montée 0037 → 0038 accepte seulement les deux CreateModel de la migration 0038_passwordresetlimit. Le registre exact, le plan unique et atomique, la cible Render, TLS, les verrous, les délais et les empreintes des données historiques sont contrôlés. Une base en 0015 doit d’abord passer par la livraison 0037 existante : aucune ancienne migration n’est élargie par cette livraison.
 
-Nouvelle migration additive 0038_passwordresetlimit aprÃ¨s 0037. Valider migration et droits sur PostgreSQL de test. La rÃ©cupÃ©ration conserve lâ€™audit et la rotation des identifiants existants, donc rÃ©vocation des sessions et autorisations selon le protocole V2 sans effacement de donnÃ©es appareil. Ã‰valuer la reprise opÃ©rateur avant livraison.
+Accord requis avant de renseigner ELEVAGE_ALLOW_RESET_UPGRADE=true et ELEVAGE_RESET_BACKUP_SHA256=empreinte d’une sauvegarde préalable vérifiée. Sans ces paramètres, une base 0037 n’est pas modifiée. Après succès, 0038 est accepté au redémarrage en lecture seule ; enlever le drapeau d’autorisation après validation. Ne jamais saisir un faux digest en production.
 
-E-mail : configurer hors Git EMAIL_HOST/PORT/USER/PASSWORD, DEFAULT_FROM_EMAIL et TLS ou SSL, SECRET_KEY stable ; planifier send_password_reset_emails idÃ©alement chaque minute et cleanup_password_resets. La file chiffrÃ©e nâ€™envoie rien sans exÃ©cution de la commande. Test SMTP rÃ©el uniquement aprÃ¨s accord sur la configuration et le destinataire. Aucun secret dans les preuves.
+## Récupération
+Le lien HTTPS contient uniquement un jeton signé dans le fragment du navigateur. Il expire au plus tard dix minutes après la demande, ne se consomme pas à l’ouverture et se consomme après un changement valide. Le code à six chiffres reste disponible pour Android 113. La rotation existante révoque les sessions et autorisations selon V2 sans effacer les données appareil.
 
-## Flutter Web
-Site existant elevage-mobile.onrender.com : master auto-dÃ©ploie, commande actuellement API pilote. Ne pas pousser master. Le candidat se compile avec APP_ENV=production et API_URL=https://backend-elevage.onrender.com/api. PrÃ©parer un changement contrÃ´lÃ© de commande Render et confirmer CORS pour lâ€™origine Web avant accord de publication. Pas dâ€™Ã©criture mÃ©tier de test dans la base production. Le Web est rÃ©servÃ© au propriÃ©taire ; les opÃ©rateurs restent sur Android avec appareil V2.
+La file e-mail est chiffrée avec une clé dérivée du SECRET_KEY existant : ne pas changer cette clé. Le plan deployment/password-reset-email-plan.json prépare un job Render payant à la minute ; aucune création sans accord et plafond financier confirmé. Son accès à DATABASE_URL, SECRET_KEY et au mot de passe d’application Gmail doit être autorisé et renseigné uniquement dans le gestionnaire de secrets. Aucun secret V2 n’est requis par ce job. Les tests utilisent une boîte locale, jamais Gmail réel.
 
-## Flutter Android
-MÃªme code Flutter que le Web. Avant une future livraison : incrÃ©menter le numÃ©ro au-delÃ  de 113 avec accord, utiliser le flavor production, API identique, certificat permanent existant chargÃ© hors Git. Comparer certificat/applicationId/version avant distribution. Ne pas remplacer lâ€™APK 113 de rÃ©fÃ©rence ni rÃ©installer la tablette dans cette mission. Un rollback Android ne doit pas forcer un downgrade ni perdre les donnÃ©es ; privilÃ©gier une version corrective au numÃ©ro supÃ©rieur.
+## Web
+Utiliser Flutter 3.47.6 révision 5fc346839b5d0eef006ed8404392afb4dfae428d, lockfile inchangé et build release APP_ENV=production, API_URL=https://backend-elevage.onrender.com/api. Corriger la commande Render actuelle qui vise le pilote, après accord. Passer le site en déploiement manuel avant la livraison contrôlée. Vérifier CORS pour https://elevage-mobile.onrender.com. Le propriétaire consulte et gère les seules fonctions autorisées ; l’opérateur reste sur Android.
 
-## Validation et accord de publication
-PrÃ©senter commits backend/Flutter compatibles, artefacts avec SHA256, rÃ©sultats ciblÃ©s, compatibilitÃ© migrations, configuration e-mail, tests navigateur propriÃ©taire/opÃ©rateur et reset, CORS et reprise V2. Le candidat reste NO-GO tant que les points ouverts dans le rapport ne sont pas clos.
+## Sauvegarde et retour arrière
+Avant toute écriture production : export logique Render, disponibilité vérifiée et empreinte SHA256 conservée hors Git ; restauration de vérification dans une base isolée et vide si l’export est utilisé. La répétition locale tools/rehearse_restore.py compare toutes les lignes d’une sauvegarde synthétique restaurée.
 
-## Retour arriÃ¨re
-Conserver le dÃ©ploiement et lâ€™artefact Web prÃ©cÃ©dents, commandes Render et rÃ©fÃ©rences de branches. AprÃ¨s accord, republier lâ€™artefact Web prÃ©cÃ©dent avec sa configuration cohÃ©rente ; ne pas faire de push forcÃ©. Revenir au backend prÃ©cÃ©dent seulement si compatible avec le schÃ©ma courant ; conserver les tables additives de 0038 plutÃ´t que supprimer les donnÃ©es. Un rollback de code ne restaure pas la base. Toute restauration de base est une dÃ©cision sÃ©parÃ©e. Android 113 et donnÃ©es locales ne sont jamais utilisÃ©s comme variables de rollback serveur.
+Ne pas redéployer aveuglément c14f489 après 0038 : son garde de démarrage refuserait ce schéma. Un retour backend doit conserver une garde compatible 0038 ; aucune suppression de table additive ni restauration destructive sans nouvelle autorisation. Le retour Web utilise l’artefact précédent et sa configuration API cohérente. Arrêter le job e-mail en cas de retrait de la fonctionnalité. La restauration de données est une opération séparée.
 
-## Blocage précis du démarrage avec 0038
-Le code existant core.production_upgrade attend exactement 37 migrations core et 0037_offline_business_revocation. Avec le nouveau code et une base encore en 0037, migrate --check refuse 0038 en attente. Après une migration externe vers 0038, son contrôle exact de schéma refuse également cet état. Il faut donc préparer et qualifier une adaptation contrôlée de cette garde avant une future publication backend ; ne pas lancer le démarrage actuel avec ce candidat en production. Les tests PostgreSQL valident les migrations Django, pas cette procédure de démarrage production. Aucun contournement ni changement de cette garde n’a été réalisé dans cette mission d’organisation.
+Android 113, son certificat et ses données restent intacts. Aucun APK n’est distribué ou installé par cette mission Web.

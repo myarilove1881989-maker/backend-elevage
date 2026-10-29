@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import PasswordResetEmail
+from .reset_links import reset_url
 
 
 def cipher():
@@ -32,8 +33,9 @@ def deliver_pending(limit=100):
             try:
                 code = cipher().decrypt(bytes(job.encrypted_code)).decode('ascii')
                 send_mail(
-                    subject='Code de réinitialisation Elev’Age',
+                    subject='Réinitialisation de votre mot de passe Élev’Age',
                     message=(f'Votre code de réinitialisation est : {code}\n\n'
+                             f'Ouvrez ce lien pour choisir votre nouveau mot de passe :\n{reset_url(reset)}\n\n'
                              'Ce code expire 10 minutes après votre demande. '
                              "Si vous n’êtes pas à l’origine de cette demande, ignorez cet e-mail."),
                     from_email=settings.DEFAULT_FROM_EMAIL,

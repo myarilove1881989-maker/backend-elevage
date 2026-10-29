@@ -194,3 +194,5 @@ OFFLINE_FINE_AUTHORIZATION_HOURS = int(os.environ.get('OFFLINE_FINE_AUTHORIZATIO
 
 EMAIL_TIMEOUT = 10
 EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "false").lower() == "true"
+
+PASSWORD_RESET_WEB_URL = os.environ.get("PASSWORD_RESET_WEB_URL", "https://elevage-mobile.onrender.com")

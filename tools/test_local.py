@@ -54,9 +54,14 @@ def local_only(sock, address):
 socket.socket.connect = local_only
 try:
     import django
-    django.setup()
     from django.conf import settings
     settings.DATABASES = {'default': db, 'health': dict(db)}
+    django.setup()
+    from django.db import connections
+    expected_vendor = 'postgresql' if args.postgres or args.ci_postgres else 'sqlite'
+    if connections['default'].vendor != expected_vendor:
+        raise RuntimeError('TEST_DATABASE_VENDOR_MISMATCH')
+    print('TEST_DATABASE_VENDOR=' + connections['default'].vendor)
     settings.PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
     settings.EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
     from django.core.management import call_command

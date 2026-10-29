@@ -3,6 +3,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework.routers import DefaultRouter
    
 from . import views, foundation_views as foundation
+from .reset_link_views import validate_link
 from .auth_views import MembershipRefreshView, MembershipLoginView, logout
 from .credential_views import change_initial_password, reset_operator_password
 from .cancellation_views import expense_cancellation
@@ -47,6 +48,7 @@ urlpatterns = [
     path('token/', MembershipLoginView.as_view()),
     path('token/refresh/', MembershipRefreshView.as_view()),
     path('token/logout/', logout),
+    path('password-reset/link/', validate_link),
     path('password-reset/request/', views.api_password_reset_request),
     path('password-reset/verify/', views.api_password_reset_verify),
     path('password-reset/confirm/', views.api_password_reset_confirm),
