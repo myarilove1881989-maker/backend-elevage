@@ -234,19 +234,23 @@ def api_password_reset_verify(request):
 def api_password_reset_confirm(request):
     email = str(request.data.get("email", "")).strip().lower()
     reset_token = str(request.data.get("reset_token", "")).strip()
+    link_token = str(request.data.get("link_token", "")).strip()
     new_password = str(request.data.get("new_password", ""))
 
-    if not email or not reset_token or not new_password:
+    if not new_password or (not link_token and (not email or not reset_token)):
         return Response({"message": "Informations incomplètes."}, status=400)
 
     try:
-        payload = signing.loads(
-            reset_token,
-            salt=PASSWORD_RESET_SALT,
-            max_age=600,
-        )
+        if link_token:
+            from .reset_links import decode_link
+            payload = decode_link(link_token)
+        else:
+            payload = signing.loads(reset_token, salt=PASSWORD_RESET_SALT, max_age=600)
     except (signing.BadSignature, signing.SignatureExpired):
         return Response({"message": "Session expirée. Demandez un nouveau code."}, status=400)
+
+    if not allow_reset(request, str(payload.get("user_id", "")), "confirm"):
+        return Response({"message": "Réessayez plus tard."}, status=429)
 
     with transaction.atomic():
         from .models import Exploitation, User
@@ -266,7 +270,7 @@ def api_password_reset_confirm(request):
             reset_code is None
             or not reset_code.is_valid
             or not reset_code.user.is_active
-            or reset_code.user.email.lower() != email
+            or (not link_token and reset_code.user.email.lower() != email)
         ):
             return Response(
                 {"message": "Session expirée. Demandez un nouveau code."},

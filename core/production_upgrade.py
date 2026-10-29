@@ -44,6 +44,66 @@ def historical_snapshot(connection, baseline=None):
     return result
 
 
+
+def upgrade_password_reset(connection):
+    """Only the exact, approved additive 0037 -> 0038 plan may write."""
+    from django.core.management import call_command
+    from django.db import transaction
+    from django.db.migrations.executor import MigrationExecutor
+
+    target = ('core', '0038_passwordresetlimit')
+    previous = ('core', '0037_offline_business_revocation')
+    executor = MigrationExecutor(connection)
+    expected_before = {node for node in executor.loader.graph.forwards_plan(previous) if node[0] == 'core'}
+    expected_after = expected_before | {target}
+
+    def registry():
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT name FROM django_migrations WHERE app='core'")
+            return {('core', row[0]) for row in cursor.fetchall()}
+
+    actual = registry()
+    if actual == expected_after:
+        call_command('migrate', check=True, interactive=False, verbosity=0)
+        print('ELEVAGE_SCHEMA_READY_0038', flush=True)
+        return
+    if actual != expected_before:
+        raise RuntimeError('UNEXPECTED_SCHEMA_STATE')
+    backup = os.environ.get('ELEVAGE_RESET_BACKUP_SHA256', '')
+    if (os.environ.get('ELEVAGE_ALLOW_RESET_UPGRADE') != 'true' or
+            len(backup) != 64 or any(c not in '0123456789abcdefABCDEF' for c in backup)):
+        raise RuntimeError('EXPLICIT_RESET_UPGRADE_AND_BACKUP_REQUIRED')
+    plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+    if len(plan) != 1 or plan[0][1] or (plan[0][0].app_label, plan[0][0].name) != target or not plan[0][0].atomic:
+        raise RuntimeError('RESET_MIGRATION_PLAN_REFUSED')
+    operations = plan[0][0].operations
+    from django.db.migrations.operations.models import CreateModel
+    if len(operations) != 2 or any(type(op) is not CreateModel for op in operations) or {op.name for op in operations} != {'PasswordResetLimit', 'PasswordResetEmail'}:
+        raise RuntimeError('RESET_MIGRATION_NOT_ADDITIVE')
+
+    with transaction.atomic(using=connection.alias):
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL lock_timeout='5s'")
+            cursor.execute("SET LOCAL statement_timeout='60s'")
+            cursor.execute('SELECT pg_try_advisory_xact_lock(%s,%s)', LOCK_KEY)
+            if cursor.fetchone() != (True,):
+                raise RuntimeError('UPGRADE_ALREADY_RUNNING')
+            tables = sorted(connection.introspection.table_names(cursor))
+            cursor.execute('LOCK TABLE ' + ','.join(connection.ops.quote_name(name) for name in tables) + ' IN SHARE ROW EXCLUSIVE MODE')
+        if registry() != expected_before:
+            raise RuntimeError('SCHEMA_CHANGED_BEFORE_LOCK')
+        before = historical_snapshot(connection)
+        call_command('migrate', 'core', target[1], interactive=False, verbosity=0)
+        if registry() != expected_after or historical_snapshot(connection, before) != before:
+            raise RuntimeError('HISTORICAL_DATA_CHANGED')
+        call_command('migrate', check=True, interactive=False, verbosity=0)
+    print('ELEVAGE_RESET_UPGRADE_COMMITTED ' + json.dumps({
+        'historical_data_unchanged': True, 'historical_tables_checked': len(before),
+        'historical_rows_checked': sum(item['count'] for item in before.values()),
+        'backup_sha256': backup.lower(), 'core_schema': target[1],
+    }, sort_keys=True), flush=True)
+
+
 def upgrade():
     os.environ['DJANGO_SETTINGS_MODULE'] = 'config.settings_production'
     os.environ['APP_ENV'] = 'production'
@@ -69,10 +129,9 @@ def upgrade():
             raise RuntimeError('TLS_REQUIRED')
         cursor.execute("SELECT count(*),max(name) FROM django_migrations WHERE app='core'")
         core_count, core_latest = cursor.fetchone()
-    expected_core = '0037_offline_business_revocation'
-    if (core_count, core_latest) == (37, expected_core):
-        call_command('migrate', check=True, interactive=False, verbosity=0)
-        print('ELEVAGE_SCHEMA_READY', flush=True)
+    if (core_count, core_latest) in {
+            (37, '0037_offline_business_revocation'), (38, '0038_passwordresetlimit')}:
+        upgrade_password_reset(connection)
         return
     if (core_count, core_latest) != (15, '0015_mouvement_lot_origine'):
         raise RuntimeError('UNEXPECTED_SCHEMA_STATE')
@@ -83,6 +142,8 @@ def upgrade():
     executor = MigrationExecutor(connection)
     targets = executor.loader.graph.leaf_nodes()
     plan = executor.migration_plan(targets)
+    if any(migration.app_label == 'core' and migration.name == '0038_passwordresetlimit' for migration, _ in plan):
+        raise RuntimeError('LEGACY_SCHEMA_REQUIRES_0037_RELEASE')
     if any(backward or not migration.atomic for migration, backward in plan):
         raise RuntimeError('NON_ATOMIC_PLAN_REFUSED')
 
