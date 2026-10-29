@@ -35,3 +35,23 @@ credentials.*.json
 service-account*.json
 # Disposable local test clusters and evidence, never application data.
 .offline-mission-tests/
+
+# Local development infrastructure, evidence and private test data
+.local/
+.cache/
+.venv/
+venv/
+tmp/
+evidence/
+artifacts/
+*.log
+*.zip
+__pycache__/
+*.pyc
+.env*
+*.p12
+*.pfx
+*.key
+*.jks
+*.keystore
+**/key.properties

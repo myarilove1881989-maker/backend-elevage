@@ -818,3 +818,14 @@ from .foundation_models import (  # noqa: E402 - string relations resolve after 
     OfflineAuthorization, AuditEvent, MembershipPermission,
 )
 from .terrain_models import DeviceTransportChallenge, TerrainSubmission, TerrainOutcome, TerrainEntityMapping, EncaissementTerrain, TerrainDecision, TerrainStockAdjustment  # noqa: E402
+
+
+class PasswordResetLimit(models.Model):
+    key = models.CharField(max_length=40, unique=True)
+    count = models.PositiveIntegerField(default=0)
+    expires_at = models.DateTimeField(db_index=True)
+
+
+class PasswordResetEmail(models.Model):
+    code = models.OneToOneField(PasswordResetCode, on_delete=models.CASCADE)
+    encrypted_code = models.BinaryField()

@@ -169,7 +169,7 @@ CSRF_COOKIE_SECURE = os.environ.get("CSRF_COOKIE_SECURE", "False").lower() == "t
 # ===============================
 EMAIL_BACKEND = os.environ.get(
     "EMAIL_BACKEND",
-    "django.core.mail.backends.console.EmailBackend",
+    "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
 )
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
@@ -191,3 +191,6 @@ OFFLINE_SIGNING_KEY_ID = os.environ.get('OFFLINE_SIGNING_KEY_ID', 'offline-v1')
 # Opt-in only: this does not enable issuance unless explicitly configured locally.
 OFFLINE_FINE_PERMISSIONS_ENABLED = os.environ.get('OFFLINE_FINE_PERMISSIONS_ENABLED', 'false').lower() == 'true'
 OFFLINE_FINE_AUTHORIZATION_HOURS = int(os.environ.get('OFFLINE_FINE_AUTHORIZATION_HOURS', '168'))
+
+EMAIL_TIMEOUT = 10
+EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "false").lower() == "true"

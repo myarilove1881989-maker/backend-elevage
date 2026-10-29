@@ -391,6 +391,7 @@ class MobileFoundationsTests(TestCase):
         payload = jwt.decode(response.data['authorization'], serverkey.public_key(), algorithms=['EdDSA'],
                              audience='elevage-device', issuer='elevage-offline')
         self.assertEqual(payload['exp'] - payload['iat'], 7 * 86400)
+        self.assertEqual(payload['credential_version'], self.jean.credential_version)
         grant = OfflineAuthorization.objects.get(pk=payload['jti'])
         context = validated_offline_context(authorization_id=grant.pk, verified_device=self.device,
                                              transport_identity='DEVICE', decision_actor_id=self.owner.pk)
