@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
    
 from . import views, foundation_views as foundation
 from .reset_link_views import validate_link
+from .farm_profile_views import farm_profile
 from .auth_views import MembershipRefreshView, MembershipLoginView, logout
 from .credential_views import change_initial_password, reset_operator_password
 from .cancellation_views import expense_cancellation
@@ -19,6 +20,7 @@ router.register("tasks", views.TaskViewSet)
 
 
 urlpatterns = [
+    path('farm-profile/', farm_profile),
     path('password/change-initial/', change_initial_password),
     path('memberships/<int:pk>/reset-password/', reset_operator_password),
     path('offline/recovery/', recovery),
