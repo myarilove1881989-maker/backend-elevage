@@ -44,6 +44,8 @@ def operation_action(entity_type, operation_type):
     if operation_type == 'REVERSE' and entity_type in {
             'VENTE_ANIMAUX', 'VENTE_OEUFS', 'DEPENSE', 'MORTALITE', 'DON', 'VOL'}:
         return ENTITY_DOMAINS[entity_type] + '.cancel'
+    if entity_type == 'COLLECTE_OEUFS' and operation_type == 'UPDATE':
+        return 'egg_collections.update'
     if entity_type == 'TASK' and operation_type == 'UPDATE':
         return 'agenda.progress'
     if operation_type != 'CREATE' or entity_type not in ENTITY_DOMAINS:

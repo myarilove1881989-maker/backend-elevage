@@ -1694,6 +1694,8 @@ def api_collecte_oeufs_detail(request, pk):
         context={"request": request},
     )
     serializer.is_valid(raise_exception=True)
+    if 'expected_version' in request.data:
+        serializer.context['expected_collection_version'] = request.data['expected_version']
     collection = update_collection(serializer=serializer)
     return Response(CollecteOeufsSerializer(
         collection,
