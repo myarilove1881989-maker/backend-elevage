@@ -275,6 +275,10 @@ def update_collection(*, serializer):
     authorize_business_service(user, user.exploitation_id, 'egg_collections.update', original)
     Lot.objects.select_for_update().get(pk=original.lot_id)
     original.refresh_from_db()
+    from .egg_collection_version import collection_version
+    expected = serializer.context.get('expected_collection_version')
+    if expected is not None and expected != collection_version(original):
+        raise ValidationError({'expected_version': 'Cette collecte a changé. Rechargez-la avant de la corriger.'})
     if serializer.validated_data.get('lot', original.lot).pk != original.lot_id:
         raise ValidationError({'lot': 'Une collecte ne peut pas changer de lot.'})
     attributed = original.affectations_sortie.aggregate(total=Sum("quantite"))["total"] or 0

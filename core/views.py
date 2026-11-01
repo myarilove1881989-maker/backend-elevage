@@ -669,16 +669,17 @@ def api_delete_mouvement(request, pk):
 # ===============================
 # CLIENT BALANCE UTILS
 # ===============================
+def client_totals(client):
+    sales = Vente.objects.filter(client=client, lot__exploitation_id=client.exploitation_id)
+    billed = sales.aggregate(total=Sum('montant_total'))['total'] or Decimal('0.00')
+    paid = Payment.objects.filter(client=client, exploitation_id=client.exploitation_id).aggregate(
+        total=Sum('montant'))['total'] or Decimal('0.00')
+    return billed, paid
+
+
 def get_client_balance(client):
-    total_ventes = client.ventes.aggregate(
-        total=Sum('montant_total')
-    )['total'] or 0
-
-    total_payments = client.payments.aggregate(
-        total=Sum('montant')
-    )['total'] or 0
-
-    return total_ventes - total_payments
+    billed, paid = client_totals(client)
+    return billed - paid
 
 
 # ===============================
@@ -1429,47 +1430,26 @@ def api_dettes_clients(request):
 
     exploitation = request.user.exploitation
 
-    clients = Client.objects.filter(
-        ventes__lot__exploitation=exploitation
-    ).distinct()
-
+    # Reverse joins do not apply Vente's active manager automatically.
+    # Select through the explicitly active, tenant-scoped sales queryset.
+    sales = Vente.objects.filter(lot__exploitation=exploitation,
+                                client__exploitation=exploitation)
+    clients = Client.objects.filter(exploitation=exploitation,
+                                    pk__in=sales.values('client_id')).order_by('nom', 'pk')
+    billed = dict(sales.values('client_id').annotate(total=Sum('montant_total')).values_list('client_id', 'total'))
+    paid = dict(Payment.objects.filter(exploitation=exploitation, client__exploitation=exploitation)
+                .values('client_id').annotate(total=Sum('montant')).values_list('client_id', 'total'))
     data = []
-
-    for c in clients:
-        total_facture = c.ventes.filter(
-            lot__exploitation=exploitation
-        ).aggregate(
-            total=Sum('montant_total')
-        )['total'] or 0
-
-        total_paye = c.payments.filter(
-            exploitation=exploitation
-        ).aggregate(
-            total=Sum('montant')
-        )['total'] or 0
-
-        total_facture = float(total_facture)
-        total_paye = float(total_paye)
-
+    for client in clients:
+        total_facture = billed[client.pk]
+        total_paye = paid.get(client.pk, Decimal('0.00'))
         reste = total_facture - total_paye
-
-        if reste == 0:
-            statut = "PAYE"
-        elif total_paye == 0:
-            statut = "IMPAYE"
-        else:
-            statut = "PARTIEL"
-
         data.append({
-            "id": c.id,
-            "nom": c.nom,
-            "total_facture": total_facture,
-            "total_paye": total_paye,
-            "reste": reste,
-            "statut": statut,
-            "telephone": c.telephone,  # 🔥 AJOUT
+            'id': client.pk, 'nom': client.nom, 'telephone': client.telephone,
+            'total_facture': float(total_facture), 'total_paye': float(total_paye),
+            'reste': float(reste),
+            'statut': 'PAYE' if reste <= 0 else ('IMPAYE' if total_paye == 0 else 'PARTIEL'),
         })
-
     return Response(data)
 
 # ===============================
@@ -1694,6 +1674,8 @@ def api_collecte_oeufs_detail(request, pk):
         context={"request": request},
     )
     serializer.is_valid(raise_exception=True)
+    if 'expected_version' in request.data:
+        serializer.context['expected_collection_version'] = request.data['expected_version']
     collection = update_collection(serializer=serializer)
     return Response(CollecteOeufsSerializer(
         collection,
