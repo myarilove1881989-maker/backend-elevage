@@ -440,7 +440,9 @@ class CollecteOeufsSerializer(serializers.ModelSerializer):
         extra_kwargs = {"nombre_collecte": {"required": False}}
 
     def to_representation(self, instance):
+        from .egg_collection_version import collection_version
         data = super().to_representation(instance)
+        data["collection_version"] = collection_version(instance)
         data["nombre_alveoles"], data["oeufs_restants"] = divmod(
             instance.nombre_collecte, self.CAPACITE_ALVEOLE
         )

@@ -124,6 +124,27 @@ def weighing(row, user):
 
 
 def egg_collection(row, user):
+    if row.operation_type == 'UPDATE':
+        from .egg_services import update_collection
+        from .egg_collection_version import collection_version
+        data = dict(row.payload)
+        reference = Reference().run_validation(data.pop('collection_ref', None))
+        original = resolve(row, reference, 'COLLECTE_OEUFS', CollecteOeufs)
+        lot = resolve(row, Reference().run_validation(data.pop('lot_ref', None)))
+        if lot.pk != original.lot_id:
+            raise BusinessConflict('COLLECTION_LOT_MISMATCH')
+        previous = data.pop('previous_quantity', None)
+        if row.expected_server_version != collection_version(original):
+            raise BusinessConflict('COLLECTION_VERSION_CONFLICT')
+        if previous != original.nombre_commercialisable:
+            raise BusinessConflict('COLLECTION_QUANTITY_CONFLICT')
+        allowed = {'nombre_collecte','nombre_casses','nombre_declasses','nombre_consommes_donnes','note'}
+        if set(data) != allowed:
+            raise BusinessConflict('UNKNOWN_BUSINESS_FIELDS')
+        serializer = CollecteOeufsSerializer(original, data=data, partial=True,
+            context=context(user, expected_collection_version=row.expected_server_version))
+        serializer.is_valid(raise_exception=True)
+        return mark_lots(update_collection(serializer=serializer), lot)
     create_only(row)
     payload, lot = data_with_lot(row, ['nombre_collecte','nombre_alveoles','oeufs_restants',
         'nombre_casses','nombre_declasses','nombre_consommes_donnes','note'])
@@ -201,7 +222,7 @@ HANDLERS = {'DEPENSE':expense,'ALIMENTATION':feed,'PESEE':weighing,'COLLECTE_OEU
     'MORTALITE':removal,'DON':removal,'VOL':removal,'ACHAT':purchase,'NAISSANCE':birth}
 from .business_authorization import guarded_handler
 from .permission_catalog import operation_action
-HANDLERS = {kind: guarded_handler(operation_action(kind, 'CREATE'), handler)
+HANDLERS = {kind: guarded_handler(None if kind == 'COLLECTE_OEUFS' else operation_action(kind, 'CREATE'), handler)
             for kind, handler in HANDLERS.items()}
 # Exported direct service calls get the same boundary as dispatch-table calls.
 for _kind, _handler in HANDLERS.items():
