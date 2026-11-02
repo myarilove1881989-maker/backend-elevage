@@ -831,5 +831,5 @@ class PasswordResetEmail(models.Model):
     encrypted_code = models.BinaryField()
 
 
-from .supply_models import (SupplyProduct, SupplyOperation, SupplyReceipt, SupplyVial,
+from .supply_models import (SupplyCategoryBinding, SupplyProduct, SupplyOperation, SupplyReceipt, SupplyVial,
     SupplyVialOpening, SupplyMovement)  # noqa: E402

@@ -33,6 +33,13 @@ def field(name, label, kind='text', value='', choices=None):
     return result
 
 def fields(kind, obj, farm):
+    if kind == 'expenses' and obj is not None and obj.pk:
+        receipt=SupplyReceipt.objects.filter(expense_id=obj.pk,operation__kind='FEED_PURCHASE').first()
+        if receipt:
+            from .supply_models import SupplyMovement
+            from django.db.models import Sum
+            delta=SupplyMovement.objects.filter(operation__exploitation_id=farm.pk,operation__kind='FEED_CORRECT',operation__payload__expense=obj.pk).aggregate(n=Sum('quantity'))['n'] or 0
+            return [field('quantity_kg','Quantité totale approvisionnée (kg)','decimal',receipt.quantity+delta)]
     if kind == 'lots':
         return [field('nom','Nom du lot',value=obj.nom),
             field('espece','Espèce','choice',obj.espece_id,[{'value':str(x.pk),'label':x.nom} for x in farm.especes.all()]),
@@ -167,8 +174,19 @@ def owner_maintenance(request,kind,pk=None):
         if kind=='lots' and 'statut_production' in values and (obj is None or values['statut_production']!=obj.statut_production) and (values['statut_production']=='TERMINE' or (obj and obj.statut_production=='TERMINE')):
             raise ValidationError('Utilisez les actions Clôturer ou Réouvrir le lot.')
         if set(values)-allowed:raise ValidationError('Champs non autorisés.')
+        if kind=='expenses' and obj is not None and SupplyReceipt.objects.filter(expense_id=obj.pk,operation__kind='FEED_PURCHASE').exists():
+            from uuid import uuid5, NAMESPACE_URL
+            from .feed_purchases import correct, cancel
+            identifier=uuid5(NAMESPACE_URL, f'feed-maintenance:{farm.pk}:{obj.pk}:{farm.business_revision}:{request.method}:{reason}:{sorted(values.items())}')
+            if request.method=='DELETE':
+                cancel(request.user,obj,identifier,reason)
+            else:
+                if set(values)!={'quantity_kg'}:raise ValidationError('Quantité physique requise ; les montants restent inchangés.')
+                correct(request.user,obj.pk,{'operation_uuid':str(identifier),'quantity_kg':values['quantity_kg'],'reason':reason})
+            farm.business_revision+=1;farm.save(update_fields=['business_revision'])
+            return Response({'status':'deleted' if request.method=='DELETE' else 'saved','id':obj.pk,'revision':farm.business_revision})
         if request.method=='POST':
-            if kind!='lots' or pk is not None:raise ValidationError('Création non prise en charge.')
+            if kind!='lots'  or pk is not None:raise ValidationError('Création non prise en charge.')
             serializer=LotSerializer(data=values,context={'request':request})
             serializer.is_valid(raise_exception=True);obj=serializer.save(exploitation=farm,created_by=request.user)
         elif request.method=='DELETE':

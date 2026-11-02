@@ -21,7 +21,11 @@ router = DefaultRouter()
 router.register("tasks", views.TaskViewSet)
 
 
+from .feed_purchase_views import catalog as feed_catalog, correction as feed_correction
+
 urlpatterns = [
+    path('feed-supplies/', feed_catalog),
+    path('depenses/supply/<int:pk>/', feed_correction),
     path('lots/<int:pk>/lifecycle/',lifecycle),
     path('maintenance/<str:kind>/', owner_maintenance),
     path('maintenance/<str:kind>/<int:pk>/', owner_maintenance),

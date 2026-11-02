@@ -298,7 +298,8 @@ class SupplySchemaTests(TransactionTestCase):
             self.assertNotIn('core_supplymovement',connection.introspection.table_names())
             self.assertEqual(list(Depense.objects.values()),before)
         finally:
-            MigrationExecutor(connection).migrate([('core','0041_supply_foundation')])
+            executor = MigrationExecutor(connection)
+            executor.migrate(executor.loader.graph.leaf_nodes())
         self.assertEqual(list(Depense.objects.values()),before)
         self.assertEqual(SupplyMovement.objects.count(),0)
 

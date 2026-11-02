@@ -181,3 +181,11 @@ class SupplyMovement(SupplyFact):
                 raise ValidationError('SUPPLY_VIAL_DOSES_REQUIRED')
         elif self.vial_id or self.kind == 'ADMINISTRATION':
             raise ValidationError('SUPPLY_FEED_MOVEMENT_INVALID')
+
+
+class SupplyCategoryBinding(AuditedModel):
+    category = models.OneToOneField('core.CategorieDepense', on_delete=models.PROTECT, related_name='supply_binding')
+    purpose = models.CharField(max_length=8, choices=[('FEED', 'Feed')])
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(purpose='FEED'), name='supply_category_feed_only')]

@@ -85,10 +85,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         from .models import CategorieDepense
 
         for nom in categories:
-            CategorieDepense.objects.create(
-            nom=nom,
-            exploitation=exploitation
-        )
+            category = CategorieDepense.objects.create(nom=nom, exploitation=exploitation)
+            if nom == 'Aliment':  # Explicit seed mapping, never runtime label detection.
+                from .supply_models import SupplyCategoryBinding
+                SupplyCategoryBinding.objects.create(category=category, purpose='FEED')
 
         ensure_species_catalog(exploitation)
 

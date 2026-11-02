@@ -1231,7 +1231,7 @@ def api_categories_depense(request):
     categories = CategorieDepense.objects.filter(
         exploitation=request.user.exploitation
     )
-    data = [{"id": c.id, "nom": c.nom} for c in categories]
+    data = [{"id": c.id, "nom": c.nom, "stock_purpose": getattr(getattr(c, "supply_binding", None), "purpose", None)} for c in categories.select_related("supply_binding")]
     return Response(data)
 # ===============================
 # CREATE DEPENSE (FIX)
@@ -1240,6 +1240,9 @@ def api_categories_depense(request):
 @permission_classes([IsAuthenticated, HasExploitation])
 @audited_endpoint
 def api_create_depense(request):
+    if 'feed_supply' in request.data:
+        from .feed_purchases import purchase
+        return Response(purchase(request.user, request.data), status=201)
 
     lot_id = request.data.get("lot")
     categorie_id = request.data.get("categorie")

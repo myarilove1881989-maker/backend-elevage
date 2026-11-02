@@ -206,7 +206,7 @@ def execute(actor, farm_id, operation_uuid, kind, payload, *, reason='', occurre
         original = None
         if kind == 'REVERSE':
             original = _object(SupplyOperation, payload['original'], exploitation=farm)
-            if original.kind in {'OPEN','REVERSE'} or SupplyOperation.objects.filter(reverses=original).exists():
+            if original.kind in {'OPEN','REVERSE','FEED_PURCHASE','FEED_CORRECT','FEED_CANCEL'} or SupplyOperation.objects.filter(reverses=original).exists():
                 fail('SUPPLY_REVERSAL_NOT_ALLOWED')
         operation = SupplyOperation.objects.create(exploitation=farm, operation_uuid=operation_uuid,
             kind=kind, author=actor, payload=payload, fingerprint=digest, reason=reason,
@@ -249,8 +249,8 @@ def _apply(op, p, now):
         if lot.espece_id != species.pk:
             fail('SUPPLY_LOT_SPECIES_MISMATCH')
         ensure_open(lot)
-    if op.kind in {'FEED_RECEIPT','VACCINE_RECEIPT'}:
-        expected = 'FEED' if op.kind == 'FEED_RECEIPT' else 'VACCINE'
+    if op.kind in {'FEED_RECEIPT','VACCINE_RECEIPT','FEED_PURCHASE'}:
+        expected = 'FEED' if op.kind in {'FEED_RECEIPT','FEED_PURCHASE'} else 'VACCINE'
         if product.kind != expected:
             fail('SUPPLY_PRODUCT_KIND_MISMATCH')
         expense = _object(Depense, p['expense'], lot__exploitation_id=farm_id) if p.get('expense') else None
