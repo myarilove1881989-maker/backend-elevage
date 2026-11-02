@@ -1,4 +1,5 @@
 """Compensate applied effects without deleting the original facts or allocations."""
+from .supply_models import SupplyReceipt, SupplyMovement, SupplyOperation
 from decimal import Decimal
 from django.db.models import Sum
 from django.utils import timezone
@@ -119,6 +120,9 @@ def reverse_effect(row, outcome, data):
             lot = Lot.objects.select_for_update().get(pk=movement.lot_id,exploitation_id=row.exploitation_id)
         if lot.stock != movement.quantite_signee:
             raise ValidationError('LOT_ORIGIN_HAS_ACTIVE_EFFECTS')
+        if (SupplyMovement.objects.filter(lot=lot).exists() or
+                SupplyOperation.objects.filter(exploitation_id=row.exploitation_id, payload__lot=lot.pk).exists()):
+            raise ValidationError('LOT_ORIGIN_HAS_ACTIVE_SUPPLY_FACTS')
         for model in (Vente,Depense,ConsommationAliment,PeseeProduction,CollecteOeufs):
             if model.objects.filter(lot=lot).exists():
                 raise ValidationError('LOT_ORIGIN_HAS_ACTIVE_EFFECTS')
@@ -142,7 +146,7 @@ def reverse_effect(row, outcome, data):
         model = {'DEPENSE':Depense, 'ALIMENTATION':ConsommationAliment, 'PESEE':PeseeProduction}[row.entity_type]
         entity = model._base_manager.select_for_update().get(pk=pk, lot__exploitation_id=row.exploitation_id)
         Lot.objects.select_for_update().get(pk=entity.lot_id, exploitation_id=row.exploitation_id)
-        if row.entity_type == 'DEPENSE' and ConsommationAliment.objects.filter(depense_id=pk).exists():
+        if row.entity_type == 'DEPENSE' and (ConsommationAliment.objects.filter(depense_id=pk).exists() or SupplyReceipt.objects.filter(expense_id=pk).exists()):
             raise ValidationError('EXPENSE_HAS_ACTIVE_FEED_DECLARATION')
         void(entity, data['decision_uuid'])
         outcome.business_status = 'SUPERSEDED'

@@ -1,3 +1,4 @@
+from .supply_models import SupplyReceipt
 from urllib import request
 
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
@@ -1295,7 +1296,7 @@ def api_delete_depense(request, pk):
         return Response({"error": "Accès interdit"}, status=403)
 
     from .owner_http import owner_context
-    if owner_context(request.user,request.user.exploitation_id) and ConsommationAliment.history.filter(depense_id=depense.pk).exists():
+    if owner_context(request.user,request.user.exploitation_id) and (ConsommationAliment.history.filter(depense_id=depense.pk).exists() or SupplyReceipt.objects.filter(expense_id=depense.pk).exists()):
         return Response({'error':'Dépense liée à une alimentation : correction coordonnée requise.'},status=400)
     depense.delete()
 

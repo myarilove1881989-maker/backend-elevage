@@ -57,4 +57,8 @@ def latest_activity(lot):
         value=manager.model._base_manager.filter(**{manager.field.name:lot.pk}).order_by('-'+field).values_list(field,flat=True).first()
         if isinstance(value,datetime):value=timezone.localtime(value).date()
         if value:dates.append(value)
+    from .supply_models import SupplyMovement, SupplyOperation
+    supply_dates = list(SupplyMovement.objects.filter(lot=lot).values_list('operation__occurred_at', flat=True))
+    supply_dates += list(SupplyOperation.objects.filter(exploitation_id=lot.exploitation_id, payload__lot=lot.pk).values_list('occurred_at', flat=True))
+    dates.extend(timezone.localtime(value).date() for value in supply_dates)
     return max(dates)

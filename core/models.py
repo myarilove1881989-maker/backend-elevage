@@ -829,3 +829,7 @@ class PasswordResetLimit(models.Model):
 class PasswordResetEmail(models.Model):
     code = models.OneToOneField(PasswordResetCode, on_delete=models.CASCADE)
     encrypted_code = models.BinaryField()
+
+
+from .supply_models import (SupplyProduct, SupplyOperation, SupplyReceipt, SupplyVial,
+    SupplyVialOpening, SupplyMovement)  # noqa: E402

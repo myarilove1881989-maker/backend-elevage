@@ -1,4 +1,5 @@
 """Explicit, audited owner corrections of classic online records, no offline rewrite."""
+from .supply_models import SupplyReceipt
 from decimal import Decimal
 from dataclasses import replace
 from .lot_lifecycle import closed
@@ -188,7 +189,7 @@ def owner_maintenance(request,kind,pk=None):
                 if movement is None:raise ValidationError('Lien de stock manquant : rapprochement requis.')
                 classic(movement);movement.delete();obj.delete()
             elif kind=='expenses':
-                if ConsommationAliment.history.filter(depense_id=obj.pk).exists():raise ValidationError('Dépense liée à une alimentation : correction coordonnée requise.')
+                if (ConsommationAliment.history.filter(depense_id=obj.pk).exists() or SupplyReceipt.objects.filter(expense_id=obj.pk).exists()):raise ValidationError('Dépense liée à une alimentation : correction coordonnée requise.')
                 obj.delete()
             else:obj.delete()
         elif kind in {'egg_sales','sales'}:update_sale(kind,obj,values,request.user)
@@ -202,7 +203,7 @@ def owner_maintenance(request,kind,pk=None):
             serializer=CollecteOeufsSerializer(obj,data=values,partial=True,context={'request':request})
             serializer.is_valid(raise_exception=True);update_collection(serializer=serializer)
         elif kind=='expenses':
-            if ConsommationAliment.history.filter(depense_id=obj.pk).exists():raise ValidationError('Dépense liée à une alimentation : correction coordonnée requise.')
+            if (ConsommationAliment.history.filter(depense_id=obj.pk).exists() or SupplyReceipt.objects.filter(expense_id=obj.pk).exists()):raise ValidationError('Dépense liée à une alimentation : correction coordonnée requise.')
             class ExpenseInput(serializers.Serializer):
                 montant=serializers.DecimalField(max_digits=12,decimal_places=2,min_value=Decimal('0.01'),required=False)
                 date=serializers.DateField(required=False)
