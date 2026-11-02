@@ -23,12 +23,18 @@ for _domain in ('animal_sales', 'egg_sales', 'expenses', 'mortality', 'donations
     DOMAIN_ACTIONS[_domain] += ('cancel',)
 PERMISSIONS = frozenset(f'{domain}.{action}' for domain, actions in DOMAIN_ACTIONS.items()
                         for action in actions)
+# These new HTTP maintenance actions are owner-only, not new operator grants.
+LEGACY_PERMISSIONS = PERMISSIONS
+OWNER_HTTP_ACTIONS = frozenset({'lots.create', 'lots.update', 'lots.delete',
+    'weights.update', 'weights.delete', 'egg_sales.update', 'expenses.update',
+    'animal_sales.update'})
+PERMISSIONS = PERMISSIONS | OWNER_HTTP_ACTIONS
 OWNER_ONLY = frozenset({'users.manage', 'devices.manage'})
 # Finance is a right of every active employee, never an individual restriction.
 BASE_READS = frozenset(code for code in PERMISSIONS
                       if code.endswith('.read') and code not in {'agenda.read', 'reconciliation.read'})
-ASSIGNABLE = PERMISSIONS - OWNER_ONLY - BASE_READS
-BUSINESS_ACTIONS = frozenset(code for code in PERMISSIONS
+ASSIGNABLE = LEGACY_PERMISSIONS - OWNER_ONLY - BASE_READS
+BUSINESS_ACTIONS = frozenset(code for code in LEGACY_PERMISSIONS
                             if not code.endswith('.read') and code.split('.')[0] not in
                             {'agenda', 'users', 'devices', 'reconciliation'})
 ENTITY_DOMAINS = {

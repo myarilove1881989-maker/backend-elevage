@@ -105,6 +105,25 @@ class LotSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lot
         fields = "__all__"
+        read_only_fields = ('exploitation', 'created_by', 'date_creation')
+
+    def validate_espece(self, value):
+        if value.exploitation_id != self.context['request'].user.exploitation_id:
+            raise serializers.ValidationError('Espèce extérieure à cette exploitation.')
+        return value
+
+    def validate(self, attrs):
+        original = self.instance
+        if original and attrs.get('type_production', original.type_production) != original.type_production:
+            for relation in original._meta.related_objects:
+                if relation.one_to_many or relation.one_to_one:
+                    if relation.related_model._base_manager.filter(**{relation.field.name: original.pk}).exists():
+                        raise serializers.ValidationError('La production d’un lot possédant des opérations ne peut pas changer.')
+        start = attrs.get('date_debut', getattr(original, 'date_debut', None))
+        end = attrs.get('date_fin', getattr(original, 'date_fin', None))
+        if start and end and end < start:
+            raise serializers.ValidationError('La date de fin doit suivre le début du lot.')
+        return attrs
 
 
 # ===============================

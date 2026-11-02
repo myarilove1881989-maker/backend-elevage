@@ -1283,6 +1283,9 @@ def api_delete_depense(request, pk):
     if depense.lot.exploitation != request.user.exploitation:
         return Response({"error": "Accès interdit"}, status=403)
 
+    from .owner_http import owner_context
+    if owner_context(request.user,request.user.exploitation_id) and ConsommationAliment.history.filter(depense_id=depense.pk).exists():
+        return Response({'error':'Dépense liée à une alimentation : correction coordonnée requise.'},status=400)
     depense.delete()
 
     return Response({"message": "Supprimé"}, status=200)
@@ -1905,6 +1908,11 @@ def api_consommation_aliment_detail(request, pk):
             consommation,
             context={"request": request},
         ).data)
+    from .owner_http import owner_context
+    if owner_context(request.user,request.user.exploitation_id):
+        from .owner_maintenance import classic
+        classic(consommation)
+        if consommation.depense_id: classic(consommation.depense)
     if request.method == "DELETE":
         consommation.delete()
         return Response(status=204)

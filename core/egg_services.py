@@ -273,6 +273,10 @@ def update_collection(*, serializer):
     from .access_policy import authorize_business_service
     user = serializer.context['request'].user
     authorize_business_service(user, user.exploitation_id, 'egg_collections.update', original)
+    from .owner_http import owner_context
+    if owner_context(user,user.exploitation_id):
+        from .owner_maintenance import classic
+        classic(original)
     Lot.objects.select_for_update().get(pk=original.lot_id)
     original.refresh_from_db()
     from .egg_collection_version import collection_version
