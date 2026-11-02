@@ -22,6 +22,7 @@ class ActorContext:
     operation_id: uuid.UUID | None = None
     local_entity_id: uuid.UUID | None = None
     business_occurred_at: datetime | None = None
+    owner_http: bool = False  # trusted request scope only, never a grant or database field
 
 
 _scope = ContextVar("audit_scope", default=None)
@@ -135,7 +136,7 @@ def delete_with_audit(objects):
     traced = models.Q(pk__in=[])
     for obj in victims.values():
         context = current_actor_context()
-        if context and context.source == 'ONLINE' and obj._meta.model_name in {
+        if context and context.source == 'ONLINE' and not context.owner_http and obj._meta.model_name in {
             'task', 'achat', 'lot', 'mouvement', 'depense', 'vente', 'venteoeufs',
             'collecteoeufs', 'mouvementoeufs', 'consommationaliment', 'peseeproduction',
             'payment', 'lettrage', 'client', 'expensecancellation',

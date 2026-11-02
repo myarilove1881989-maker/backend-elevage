@@ -23,6 +23,7 @@ from .permissions import require_member, require_owner, capabilities_for
 from .device_services import load_public_key, verify_request_device
 from .audit import ActorContext, audit_scope, record, snapshot
 from .request_context import online_context
+from .owner_http import contract_version, owner_http_request
 
 
 class MemberSerializer(serializers.ModelSerializer):
@@ -118,12 +119,12 @@ def capabilities(request):
     return Response({'user': request.user.pk, 'exploitation': member.exploitation_id,
                      'user_administration_contract': 1,
                      'credential_version': request.user.credential_version,
-                     'permission_contract': permission_contract(request.user),
+                     'permission_contract': permission_contract(request.user, version=contract_version(request)),
                      'role': member.role, 'membership': MemberSerializer(member).data,
                      'offline_permission_contract': {'supported_versions': [2],
                          'issuance_enabled': getattr(settings, 'OFFLINE_FINE_PERMISSIONS_ENABLED', False) is True},
                      'offline_policy_enabled': member.exploitation.offline_policy_enabled,
-                     'capabilities': capabilities_for(request.user),
+                     'capabilities': capabilities_for(request.user, owner_http=owner_http_request(request)),
                      'primary_device': DeviceSerializer(device).data if device else None,
                      'write_generation': member.exploitation.write_generation,
                      'offline_authorization_days': settings.OFFLINE_AUTHORIZATION_DAYS})

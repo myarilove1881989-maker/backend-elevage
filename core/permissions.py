@@ -21,17 +21,17 @@ def require_owner(user):
     return member
 
 
-def capabilities_for(user):
+def capabilities_for(user, *, owner_http=False):
     member = membership_for(user)
     active = bool(user.is_active and member and member.is_active)
     owner = active and member.role == 'OWNER' and member.exploitation.proprietaire_id == user.pk
     legacy = bool(user.exploitation_id and not user.exploitation.offline_policy_enabled)
     # Signed V1 grants retain their existing operator capability contract.
-    writer = active and member.role == 'OPERATEUR'
+    writer = active and (member.role == 'OPERATEUR' or (owner and owner_http))
     return {
         'can_view_business': active, 'can_view_finance': active,
         'can_create_sale': writer, 'can_create_expense': writer,
-        'can_create_terrain_operation': writer, 'requires_primary_device': not legacy,
+        'can_create_terrain_operation': writer, 'requires_primary_device': not legacy and not (owner and owner_http),
         'can_manage_users': owner, 'can_manage_devices': owner,
         'can_view_audit': owner, 'can_create_task': owner or (active and legacy),
         'can_assign_task': owner, 'can_progress_task': active and member.role == 'OPERATEUR',
@@ -61,8 +61,12 @@ class HasExploitation(BasePermission):
             authorize(user, user.exploitation_id, action)
             return True  # field and transition checks remain in the serializer
         from .access_policy import authorize, ordinary_request_action
-        authorize(user, user.exploitation_id, ordinary_request_action(request))
-        if not user.exploitation.offline_policy_enabled:
+        from .owner_http import owner_http_request
+        owner_http = owner_http_request(request)
+        if owner_http and request.method=='DELETE' and request.data.get('confirm') is not True:
+            raise PermissionDenied('Confirmation explicite requise pour cette suppression.')
+        authorize(user, user.exploitation_id, ordinary_request_action(request), owner_http=owner_http)
+        if owner_http or not user.exploitation.offline_policy_enabled:
             return True
         from .device_services import verify_request_device
         request.verified_device = verify_request_device(request, primary=True)

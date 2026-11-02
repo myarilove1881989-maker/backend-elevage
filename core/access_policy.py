@@ -1,6 +1,6 @@
 """Tenant-bound authorization; callers retain their transaction and business checks."""
 from rest_framework.exceptions import PermissionDenied
-from .permission_catalog import (PERMISSIONS, OWNER_ONLY, BASE_READS, BUSINESS_ACTIONS,
+from .permission_catalog import (PERMISSIONS, LEGACY_PERMISSIONS, OWNER_HTTP_ACTIONS, OWNER_ONLY, BASE_READS, BUSINESS_ACTIONS,
                                  PERMISSION_CONTRACT_VERSION, operation_action)
 
 
@@ -34,11 +34,11 @@ def effective_permissions(member):
     if member.role == 'OWNER':
         if member.exploitation.proprietaire_id != member.user_id:
             return frozenset()
-        return PERMISSIONS - BUSINESS_ACTIONS - {'agenda.progress'}
+        return LEGACY_PERMISSIONS - BUSINESS_ACTIONS - {'agenda.progress'}
     return BASE_READS | frozenset(member.action_permissions.values_list('code', flat=True))
 
 
-def authorize(actor, farm, action, resource=None, *, device=None):
+def authorize(actor, farm, action, resource=None, *, device=None, owner_http=False):
     farm_id = farm.pk if hasattr(farm, 'pk') else farm
     member = active_membership(actor, farm_id)
     if action not in PERMISSIONS:
@@ -49,11 +49,13 @@ def authorize(actor, farm, action, resource=None, *, device=None):
             resource_farm = resource.lot.exploitation_id
         if resource_farm != farm_id:
             raise PermissionDenied('RESOURCE_OUTSIDE_FARM')
-    if member.role == 'OWNER' and action in BUSINESS_ACTIONS:
+    from .owner_http import owner_context
+    owner_http = member.role == 'OWNER' and (owner_http or owner_context(actor, farm_id))
+    if member.role == 'OWNER' and action in (BUSINESS_ACTIONS | OWNER_HTTP_ACTIONS) and not owner_http:
         raise PermissionDenied('TERRAIN_OPERATOR_REQUIRED')
     if member.role != 'OWNER' and action in OWNER_ONLY:
         raise PermissionDenied('OWNER_REQUIRED')
-    if action not in effective_permissions(member):
+    if action not in (PERMISSIONS - {'agenda.progress'} if owner_http else effective_permissions(member)):
         raise PermissionDenied('ACTION_PERMISSION_REQUIRED')
     if device is not None and (device.exploitation_id != farm_id or device.status != 'ACTIVE'
                               or not device.is_primary_writer
@@ -62,11 +64,17 @@ def authorize(actor, farm, action, resource=None, *, device=None):
     return member
 
 
-def permission_contract(actor):
+def permission_contract(actor, *, version=1):
     member = active_membership(actor)
-    return {'version': PERMISSION_CONTRACT_VERSION, 'rights_version': member.version,
+    from .permission_catalog import LEGACY_PERMISSIONS
+    rights = effective_permissions(member)
+    if version == 2 and member.role == 'OWNER':
+        rights = PERMISSIONS - {'agenda.progress'}
+    if version == 1:
+        rights = rights & LEGACY_PERMISSIONS
+    return {'version': version, 'rights_version': member.version,
             'user': actor.pk, 'exploitation': member.exploitation_id, 'role': member.role,
-            'permissions': sorted(effective_permissions(member))}
+            'permissions': sorted(rights)}
 
 
 def ordinary_request_action(request):
@@ -92,7 +100,7 @@ def ordinary_request_action(request):
         if domain:
             return domain + ('.create' if method == 'POST' else '.delete')
         raise PermissionDenied('UNKNOWN_BUSINESS_ACTION')
-    prefixes = {'achats': 'purchases', 'depenses': 'expenses',
+    prefixes = {'lots': 'lots', 'achats': 'purchases', 'depenses': 'expenses',
         'clients/create': 'clients', 'payments/create': 'cash', 'especes': 'species',
         'oeufs/collectes': 'egg_collections', 'oeufs/ventes': 'egg_sales',
         'oeufs/alimentation': 'feed', 'alimentation/distributions': 'feed',
@@ -143,7 +151,8 @@ def authorize_business_service(actor, farm, action, resource=None):
     if connection.in_atomic_block:
         farms = farms.select_for_update()
     actual_farm = farms.get(pk=farm_id)
-    if actual_farm.proprietaire_id == actor.pk:
+    from .owner_http import owner_context
+    if actual_farm.proprietaire_id == actor.pk and not owner_context(actor, farm_id):
         raise PermissionDenied('TERRAIN_OPERATOR_REQUIRED')
     if context and context.source in {'OFFLINE', 'RECONCILE'}:
         if context.author_id != actor.pk or context.exploitation_id != farm_id or not context.operation_id:

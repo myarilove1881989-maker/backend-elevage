@@ -9,16 +9,20 @@ from .permissions import require_member
 
 def online_context(request):
     device = getattr(request, 'verified_device', None)
+    from .owner_http import owner_http_request
     return ActorContext(request.user.pk, request.user.exploitation_id,
-                        device.pk if device else None)
+                        device.pk if device else None,
+                        owner_http=owner_http_request(request))
 
 
 def lock_write_context(request):
     farm = Exploitation.objects.select_for_update().get(pk=request.user.exploitation_id)
     from .access_policy import authorize, ordinary_request_action
     # Fresh membership/rights after the farm lock: a concurrent revocation wins.
-    authorize(request.user, farm, ordinary_request_action(request))
-    if farm.offline_policy_enabled:
+    from .owner_http import owner_http_request
+    owner_http = owner_http_request(request)
+    authorize(request.user, farm, ordinary_request_action(request), owner_http=owner_http)
+    if farm.offline_policy_enabled and not owner_http:
         member = require_member(request.user)
         if member.role != 'OPERATEUR':
             raise PermissionDenied('Le propriétaire supervise les opérations terrain.')
