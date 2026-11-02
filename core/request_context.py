@@ -21,7 +21,10 @@ def lock_write_context(request):
     # Fresh membership/rights after the farm lock: a concurrent revocation wins.
     from .owner_http import owner_http_request
     owner_http = owner_http_request(request)
-    authorize(request.user, farm, ordinary_request_action(request), owner_http=owner_http)
+    action=ordinary_request_action(request)
+    authorize(request.user, farm, action, owner_http=owner_http)
+    from .lot_lifecycle import guard_request
+    guard_request(request,action)
     if farm.offline_policy_enabled and not owner_http:
         member = require_member(request.user)
         if member.role != 'OPERATEUR':

@@ -1,5 +1,7 @@
 """Explicit, audited owner corrections of classic online records, no offline rewrite."""
 from decimal import Decimal
+from dataclasses import replace
+from .lot_lifecycle import closed
 from django.db.models.deletion import ProtectedError
 from django.utils import timezone
 from rest_framework import serializers
@@ -113,7 +115,7 @@ def owner_maintenance(request,kind,pk=None):
     member=require_owner(request.user)
     if not owner_http_request(request) or kind not in MODELS:
         raise PermissionDenied('Accès propriétaire HTTP vérifié requis.')
-    with audit_scope(online_context(request),reason_code='OWNER_MAINTENANCE',
+    with audit_scope(replace(online_context(request),closed_lot_correction=request.data.get('allow_closed') is True),reason_code='OWNER_MAINTENANCE',
                      reason_text=str(request.data.get('reason',''))[:1000]):
         farm=Exploitation.objects.select_for_update().get(pk=member.exploitation_id)
         obj=None
@@ -141,7 +143,7 @@ def owner_maintenance(request,kind,pk=None):
             if obj is None:
                 if kind!='lots':raise NotFound()
                 obj=Lot(nom='',date_debut=timezone.localdate(),exploitation=farm)
-            return Response({'id':pk,'farm':farm.pk,'revision':farm.business_revision,'fields':fields(kind,obj,farm),
+            return Response({'id':pk,'farm':farm.pk,'revision':farm.business_revision,'closed':closed(obj if kind=='lots' else obj.lot),'fields':fields(kind,obj,farm),
                 'consequences':('Le lot et ses achats, mouvements, dépenses et suivis associés seront supprimés. '
                     'Les ventes non payées seront retirées et les soldes clients recalculés. Les ventes payées, dépendances protégées et écritures hors ligne empêchent la suppression. '
                     'Le journal d’audit sera conservé.' if kind=='lots' else
@@ -156,8 +158,13 @@ def owner_maintenance(request,kind,pk=None):
             raise ValidationError('Les données ont changé. Rechargez avant de confirmer cette correction.')
         values=request.data.get('values',{})
         if not isinstance(values,dict):raise ValidationError('Champs invalides.')
-        if obj is not None:classic(obj)
+        if obj is not None:
+            target=obj if kind=='lots' else obj.lot
+            if closed(target) and request.data.get('allow_closed') is not True:raise ValidationError('Confirmez explicitement la correction exceptionnelle de ce lot clôturé.')
+            classic(obj)
         allowed={f['name'] for f in fields(kind,obj or Lot(nom='',date_debut=timezone.localdate(),exploitation=farm),farm)}
+        if kind=='lots' and 'statut_production' in values and (obj is None or values['statut_production']!=obj.statut_production) and (values['statut_production']=='TERMINE' or (obj and obj.statut_production=='TERMINE')):
+            raise ValidationError('Utilisez les actions Clôturer ou Réouvrir le lot.')
         if set(values)-allowed:raise ValidationError('Champs non autorisés.')
         if request.method=='POST':
             if kind!='lots' or pk is not None:raise ValidationError('Création non prise en charge.')

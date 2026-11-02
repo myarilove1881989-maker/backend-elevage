@@ -145,6 +145,8 @@ def authorize_business_service(actor, farm, action, resource=None):
     farm_id = farm.pk if hasattr(farm, 'pk') else farm
     if not actor or getattr(actor, 'exploitation_id', None) != farm_id:
         raise PermissionDenied('RESOURCE_OUTSIDE_FARM')
+    from .lot_lifecycle import resource_guard
+    resource_guard(resource,action)
     from .models import Exploitation
     from django.db import connection
     farms = Exploitation.objects.all()

@@ -25,6 +25,8 @@ def get_live_birds(lot):
 
 def get_hen_days(lot, start, end):
     """Effectif par jour, mouvements datés inclus, pour la période sélectionnée."""
+    if lot.date_fin is not None:end=min(end,lot.date_fin)
+    if end<start:return 0
     events = {}
     for row in Achat.objects.filter(lot=lot, date__lte=end).values('date').annotate(n=Sum('quantite')):
         events[row['date']] = events.get(row['date'], 0) + row['n']
