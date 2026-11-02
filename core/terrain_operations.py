@@ -46,6 +46,9 @@ def resolve(row, reference, kind='LOT', model=Lot):
         if model is Lot and TerrainEntityMapping.objects.filter(exploitation_id=row.exploitation_id,
             entity_type='LOT',server_entity_id=pk,submission__outcome__business_status='SUPERSEDED').exists():
             raise BusinessConflict('LOT_ORIGIN_REVERSED')
+        if model is Lot and row.operation_type in {'CREATE','UPDATE'}:
+            from .lot_lifecycle import closed,correction_context
+            if closed(entity) and not correction_context():raise BusinessConflict('LOT_CLOSED')
         return entity
     except model.DoesNotExist:
         raise BusinessConflict('REFERENCE_OUTSIDE_FARM')

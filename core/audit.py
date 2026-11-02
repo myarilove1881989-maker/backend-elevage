@@ -23,6 +23,7 @@ class ActorContext:
     local_entity_id: uuid.UUID | None = None
     business_occurred_at: datetime | None = None
     owner_http: bool = False  # trusted request scope only, never a grant or database field
+    closed_lot_correction: bool = False
 
 
 _scope = ContextVar("audit_scope", default=None)

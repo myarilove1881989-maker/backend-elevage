@@ -403,7 +403,10 @@ def api_dashboard(request):
     ).aggregate(total=Sum('quantite'))['total'] or 0
 
     marge = total_ca - total_depenses
-    stock_total = sum(get_lot_stock(lot) for lot in lots) if lots.exists() else 0
+    from .lot_lifecycle import closed
+    rows=list(lots)
+    stock_closed=sum(get_lot_stock(lot) for lot in rows if closed(lot))
+    stock_total=sum(get_lot_stock(lot) for lot in rows if not closed(lot))
     pertes = Mouvement.objects.filter(
         lot__in=lots,
         type_mouvement__in=['MORTALITE', 'DON', 'VOL']
@@ -412,6 +415,9 @@ def api_dashboard(request):
     return Response({
         "kpis": {
             "stock": stock_total,
+            "stock_lots_clotures":stock_closed,
+            "lots_clotures":sum(closed(lot) for lot in rows),
+            "stock_total_historique":stock_total+stock_closed,
             "chiffre_affaires": total_ca,
             "depenses": total_depenses,
             "marge": marge,
@@ -1147,6 +1153,11 @@ def api_marge_par_lot(request):
 @audited_endpoint
 def api_lots(request):
     lots = Lot.objects.filter(exploitation=request.user.exploitation)
+    from .lot_lifecycle import closed_filter
+    state=request.query_params.get('lot_state','all')
+    if state=='active':lots=lots.exclude(closed_filter())
+    elif state=='closed':lots=lots.filter(closed_filter())
+    elif state!='all':return Response({'error':'Filtre de lots invalide.'},status=400)
     return Response(LotSerializer(lots, many=True).data)
 
 
