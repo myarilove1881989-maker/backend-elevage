@@ -10,28 +10,32 @@ from .permissions import HasExploitation
 from .access_policy import authorize
 from .request_context import audited_endpoint
 from .supply_models import SupplyProduct, SupplyVial, SupplyVialOpening
-from .supply_services import _vial_balance, _usable
 from .vaccine_services import administer, serialize
 from .vaccination_models import Vaccination
 
 
 def snapshot(farm_id):
-    from .feed_stock import snapshot as feed_snapshot
+    from .feed_stock import operation_coverage
     # Reuse coverage of the existing outbox; no second acknowledgement protocol.
-    coverage=feed_snapshot(farm_id)['coverage']
+    coverage=operation_coverage(farm_id)
     farm=Exploitation.objects.get(pk=farm_id);now=timezone.now();vials=[]
-    products=list(SupplyProduct.objects.filter(exploitation=farm,kind='VACCINE').order_by('id').values('id','name','archived'))
+    products=list(SupplyProduct.objects.filter(exploitation=farm,kind='VACCINE').order_by('id').values('id','name','archived','alert_threshold'))
     if len(products)>1000:raise ValidationError('VACCINE_CATALOG_TOO_LARGE')
-    for product in products:product['id']=str(product['id'])
-    for vial in SupplyVial.objects.filter(receipt__operation__exploitation=farm).select_related('receipt__operation','receipt__product').order_by('id')[:10001]:
-        entry=vial.receipt.operation.movements.filter(vial=vial,kind='ENTRY').first()
+    for product in products:
+        product['id']=str(product['id']);product['alert_threshold']=str(product['alert_threshold'])
+    from django.db.models import Sum
+    from .supply_models import SupplyMovement
+    entries={row.vial_id:row for row in SupplyMovement.objects.filter(operation__exploitation=farm,product__kind='VACCINE',kind='ENTRY')}
+    balances={row['vial_id']:row['total'] for row in SupplyMovement.objects.filter(operation__exploitation=farm,product__kind='VACCINE').values('vial_id').annotate(total=Sum('quantity'))}
+    for vial in SupplyVial.objects.filter(receipt__operation__exploitation=farm).select_related('receipt__operation','receipt__product','opening').order_by('id')[:10001]:
+        entry=entries.get(vial.pk)
         if entry is None:raise ValidationError('VACCINE_ENTRY_MISSING')
-        opening=SupplyVialOpening.objects.filter(vial=vial).first()
+        opening=getattr(vial,'opening',None)
         until=timezone.make_aware(datetime.combine(vial.receipt.expires_on+timedelta(days=1),time.min))
         if opening and opening.usable_seconds is not None:until=min(until,opening.opened_at+timedelta(seconds=opening.usable_seconds))
-        physical=int(_vial_balance(vial))
+        physical=int(balances.get(vial.pk,0))
         vials.append({'id':str(vial.pk),'product':str(vial.receipt.product_id),'label':f'{vial.receipt.manufacturer_batch} / {vial.ordinal} / {str(vial.pk)[:8]}',
-            'species':entry.species_id,'lot':entry.lot_id,'physical':physical,'usable':physical if _usable(vial,now) else 0,
+            'species':entry.species_id,'lot':entry.lot_id,'physical':physical,'usable':physical if now<until and (opening is None or now>=opening.opened_at) else 0,
             'expires_on':str(vial.receipt.expires_on),'usable_until':until.isoformat(),
             'opened_at':opening.opened_at.isoformat() if opening else None,'usable_seconds':opening.usable_seconds if opening else None,
             'manufacturer_batch':vial.receipt.manufacturer_batch,'doses_per_vial':vial.receipt.doses_per_vial})

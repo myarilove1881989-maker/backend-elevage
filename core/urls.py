@@ -144,3 +144,6 @@ urlpatterns = [
 
 from . import vaccine_views
 urlpatterns += [path('vaccine-supplies/',vaccine_views.catalog),path('vaccinations/',vaccine_views.vaccinations),path('vaccinations/<int:pk>/',vaccine_views.detail)]
+
+from . import stock_dashboard_views
+urlpatterns += [path("supply-products/<uuid:pk>/threshold/",stock_dashboard_views.threshold),path("supply-products/<uuid:pk>/history/",stock_dashboard_views.history)]

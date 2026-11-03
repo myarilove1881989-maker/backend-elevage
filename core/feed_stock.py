@@ -131,21 +131,32 @@ def edit_distribution(actor,pk,body,cancel=False):
     return item
 
 
-def snapshot(farm_id):
+def snapshot(farm_id, *, presentation=False):
     """Called under the existing farm lock. Coverage prevents response-loss double folding."""
     farm=Exploitation.objects.get(pk=farm_id)
     products=[]
-    for product in SupplyProduct.objects.filter(exploitation_id=farm_id,kind='FEED').order_by('id'):
-        positions=list(SupplyMovement.objects.filter(product=product).values('species_id','lot_id').annotate(kg=Sum('quantity')).order_by('species_id','lot_id'))
-        for position in positions:position['kg']=str(position['kg'])
-        products.append({'id':str(product.pk),'name':product.name,'archived':product.archived,'positions':positions})
+    positions={}
+    for row in SupplyMovement.objects.filter(product__exploitation_id=farm_id,product__kind='FEED').values('product_id','species_id','lot_id').annotate(kg=Sum('quantity')).order_by('product_id','species_id','lot_id')[:20001]:
+        product_id=row.pop('product_id');row['kg']=str(row['kg']);positions.setdefault(product_id,[]).append(row)
+    if sum(len(rows) for rows in positions.values())>20000:
+        raise ValidationError('FEED_POSITION_LIMIT_REQUIRES_PAGINATION')
+    for product in SupplyProduct.objects.filter(exploitation_id=farm_id,kind='FEED').order_by('id')[:1001]:
+        products.append({'id':str(product.pk),'name':product.name,'archived':product.archived,
+            **({'alert_threshold':str(product.alert_threshold)} if presentation else {}),'positions':positions.get(product.pk,[])})
+    coverage=operation_coverage(farm_id)
+    if len(products)>1000:
+        raise ValidationError('FEED_SNAPSHOT_LIMIT_REQUIRES_PAGINATION')
+    return {'id':1,'exploitation':farm_id,'schema':1,'confirmed_business_revision':farm.business_revision,
+        **({'as_of':timezone.now().isoformat()} if presentation else {}),'products':products,'coverage':coverage}
+
+
+def operation_coverage(farm_id):
     coverage={}
     rows=TerrainOutcome.objects.filter(submission__exploitation_id=farm_id,business_status__in=['CONFIRMED','SUPERSEDED'],applied_at__isnull=False).order_by('submission__device_id','submission__local_sequence').values_list('submission__device_id','submission__local_sequence')
     for device,sequence in rows.iterator():
         ranges=coverage.setdefault(str(device),[])
         if ranges and ranges[-1][1]+1==sequence:ranges[-1][1]=sequence
         else:ranges.append([sequence,sequence])
-    if len(products)>1000 or sum(len(ranges) for ranges in coverage.values())>10000:
+    if sum(len(ranges) for ranges in coverage.values())>10000:
         raise ValidationError('FEED_SNAPSHOT_LIMIT_REQUIRES_PAGINATION')
-    return {'id':1,'exploitation':farm_id,'schema':1,'confirmed_business_revision':farm.business_revision,
-        'products':products,'coverage':coverage}
+    return coverage
