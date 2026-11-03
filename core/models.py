@@ -833,3 +833,5 @@ class PasswordResetEmail(models.Model):
 
 from .supply_models import (FeedDistributionLink, SupplyCategoryBinding, SupplyProduct, SupplyOperation, SupplyReceipt, SupplyVial,
     SupplyVialOpening, SupplyMovement)  # noqa: E402
+
+from .vaccination_models import Vaccination  # noqa: E402

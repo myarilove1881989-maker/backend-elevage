@@ -206,7 +206,7 @@ def execute(actor, farm_id, operation_uuid, kind, payload, *, reason='', occurre
         original = None
         if kind == 'REVERSE':
             original = _object(SupplyOperation, payload['original'], exploitation=farm)
-            if original.kind in {'OPEN','REVERSE','FEED_PURCHASE','FEED_CORRECT','FEED_CANCEL','FEED_DISTRIBUTION','FEED_DIST_EDIT','FEED_DIST_CANCEL'} or SupplyOperation.objects.filter(reverses=original).exists():
+            if original.kind in {'OPEN','REVERSE','FEED_PURCHASE','FEED_CORRECT','FEED_CANCEL','FEED_DISTRIBUTION','FEED_DIST_EDIT','FEED_DIST_CANCEL','VAC_PURCHASE','VAC_ADMIN','VAC_EDIT','VAC_CANCEL','VAC_OPEN'} or SupplyOperation.objects.filter(reverses=original).exists():
                 fail('SUPPLY_REVERSAL_NOT_ALLOWED')
         operation = SupplyOperation.objects.create(exploitation=farm, operation_uuid=operation_uuid,
             kind=kind, author=actor, payload=payload, fingerprint=digest, reason=reason,
@@ -249,7 +249,7 @@ def _apply(op, p, now):
         if lot.espece_id != species.pk:
             fail('SUPPLY_LOT_SPECIES_MISMATCH')
         ensure_open(lot)
-    if op.kind in {'FEED_RECEIPT','VACCINE_RECEIPT','FEED_PURCHASE'}:
+    if op.kind in {'FEED_RECEIPT','VACCINE_RECEIPT','FEED_PURCHASE','VAC_PURCHASE'}:
         expected = 'FEED' if op.kind in {'FEED_RECEIPT','FEED_PURCHASE'} else 'VACCINE'
         if product.kind != expected:
             fail('SUPPLY_PRODUCT_KIND_MISMATCH')
@@ -276,7 +276,7 @@ def _apply(op, p, now):
                 vial_count=int(count), doses_per_vial=int(doses), quantity=quantity(count*doses))
             for i in range(1, int(count)+1):
                 vial = SupplyVial.objects.create(receipt=receipt, ordinal=i)
-                _move(op, product, species, None, doses, 'ENTRY', vial)
+                _move(op, product, species, lot, doses, 'ENTRY', vial)
         return
     if op.kind in {'DISTRIBUTE','TRANSFER'}:
         if product.kind != 'FEED':

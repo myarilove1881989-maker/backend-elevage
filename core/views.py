@@ -1240,6 +1240,9 @@ def api_categories_depense(request):
 @permission_classes([IsAuthenticated, HasExploitation])
 @audited_endpoint
 def api_create_depense(request):
+    if 'vaccine_supply' in request.data:
+        from .vaccine_services import purchase as vaccine_purchase
+        return Response(vaccine_purchase(request.user,dict(request.data)),status=201)
     if 'feed_supply' in request.data:
         from .feed_purchases import purchase
         return Response(purchase(request.user, request.data), status=201)

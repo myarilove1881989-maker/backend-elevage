@@ -185,10 +185,10 @@ class SupplyMovement(SupplyFact):
 
 class SupplyCategoryBinding(AuditedModel):
     category = models.OneToOneField('core.CategorieDepense', on_delete=models.PROTECT, related_name='supply_binding')
-    purpose = models.CharField(max_length=8, choices=[('FEED', 'Feed')])
+    purpose = models.CharField(max_length=8, choices=[('FEED', 'Feed'), ('VACCINE', 'Vaccine')])
 
     class Meta:
-        constraints = [models.CheckConstraint(condition=Q(purpose='FEED'), name='supply_category_feed_only')]
+        constraints = [models.CheckConstraint(condition=Q(purpose__in=['FEED','VACCINE']), name='supply_category_feed_only')]
 
 
 class FeedDistributionLink(SupplyFact):

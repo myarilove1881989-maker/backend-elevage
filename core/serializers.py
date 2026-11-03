@@ -86,6 +86,9 @@ class RegisterSerializer(serializers.ModelSerializer):
 
         for nom in categories:
             category = CategorieDepense.objects.create(nom=nom, exploitation=exploitation)
+            if nom == 'Vaccin':
+                from .supply_models import SupplyCategoryBinding
+                SupplyCategoryBinding.objects.create(category=category,purpose='VACCINE')
             if nom == 'Aliment':  # Explicit seed mapping, never runtime label detection.
                 from .supply_models import SupplyCategoryBinding
                 SupplyCategoryBinding.objects.create(category=category, purpose='FEED')

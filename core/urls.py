@@ -141,3 +141,6 @@ urlpatterns = [
     path("alimentation/distributions/<int:pk>/", views.api_consommation_aliment_detail),
     path("production/pesees/", views.api_pesees_production),
 ]
+
+from . import vaccine_views
+urlpatterns += [path('vaccine-supplies/',vaccine_views.catalog),path('vaccinations/',vaccine_views.vaccinations),path('vaccinations/<int:pk>/',vaccine_views.detail)]

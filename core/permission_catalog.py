@@ -2,6 +2,7 @@
 PERMISSION_CONTRACT_VERSION = 1
 
 DOMAIN_ACTIONS = {
+    'vaccinations': ('read','create','update','delete','loss'),
     'purchases': ('read', 'create', 'delete'),
     'animal_sales': ('read', 'create', 'delete'),
     'expenses': ('read', 'create', 'delete'),
@@ -42,11 +43,13 @@ ENTITY_DOMAINS = {
     'VENTE_OEUFS': 'egg_sales', 'DEPENSE': 'expenses', 'MORTALITE': 'mortality',
     'NAISSANCE': 'births', 'DON': 'donations', 'VOL': 'thefts', 'CLIENT': 'clients',
     'COLLECTE_OEUFS': 'egg_collections', 'ENCAISSEMENT': 'cash',
-    'ALIMENTATION': 'feed', 'PESEE': 'weights',
+    'VACCINATION':'vaccinations', 'ALIMENTATION': 'feed', 'PESEE': 'weights',
 }
 
 
 def operation_action(entity_type, operation_type):
+    if entity_type=='VACCINATION':
+        return 'vaccinations.'+{'CREATE':'create','UPDATE':'update','REVERSE':'delete'}.get(operation_type,'unknown')
     if operation_type == 'REVERSE' and entity_type in {
             'VENTE_ANIMAUX', 'VENTE_OEUFS', 'DEPENSE', 'MORTALITE', 'DON', 'VOL'}:
         return ENTITY_DOMAINS[entity_type] + '.cancel'

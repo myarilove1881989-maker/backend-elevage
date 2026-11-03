@@ -104,7 +104,7 @@ def ordinary_request_action(request):
         'clients/create': 'clients', 'payments/create': 'cash', 'especes': 'species',
         'oeufs/collectes': 'egg_collections', 'oeufs/ventes': 'egg_sales',
         'oeufs/alimentation': 'feed', 'alimentation/distributions': 'feed',
-        'production/pesees': 'weights'}
+        'production/pesees': 'weights', 'vaccinations':'vaccinations'}
     for prefix, domain in prefixes.items():
         if suffix == prefix or suffix.startswith(prefix + '/'):
             action = {'POST': 'create', 'PUT': 'update', 'PATCH': 'update', 'DELETE': 'delete'}.get(method)

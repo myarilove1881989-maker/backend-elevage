@@ -14,7 +14,7 @@ from .animal_stock import animal_stock_expression
 
 
 class CachePageInput(serializers.Serializer):
-    collection = serializers.ChoiceField(choices=['lots', 'clients', 'species', 'tasks', 'expense_categories', 'sales', 'feed_stock'])
+    collection = serializers.ChoiceField(choices=['lots', 'clients', 'species', 'tasks', 'expense_categories', 'sales', 'feed_stock', 'vaccine_stock'])
     after = serializers.IntegerField(min_value=0, max_value=9223372036854775807, default=0)
     limit = serializers.IntegerField(min_value=1, max_value=200, default=50)
 
@@ -44,6 +44,10 @@ def cache_page(request):
     inputs.is_valid(raise_exception=True)
     collection, after, limit = (inputs.validated_data[key] for key in ('collection', 'after', 'limit'))
     farm = Exploitation.objects.select_for_update().get(pk=member.exploitation_id)
+    if collection == 'vaccine_stock':
+        from .vaccine_views import snapshot
+        return Response({'collection':collection,'results':[snapshot(farm.pk)] if after==0 else [],'next_cursor':None,
+            'server_time':timezone.now(),'confirmed_business_revision':farm.business_revision})
     if collection == 'feed_stock':
         from .feed_stock import snapshot
         return Response({'collection':collection,'results':[snapshot(farm.pk)] if after==0 else [],'next_cursor':None,
