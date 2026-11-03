@@ -27,7 +27,7 @@ def historical_snapshot(connection, baseline=None):
             digest, count = hashlib.sha256(), 0
             while rows := cursor.fetchmany(500):
                 for row in rows:
-                    values = list(row)
+                    values = [bytes(value).hex() if isinstance(value, (bytes, bytearray, memoryview)) else value for value in row]
                     if name in {'core_payment', 'core_lettrage'} and 'montant' in columns:
                         index = columns.index('montant')
                         amount = Decimal(str(values[index]))
@@ -64,7 +64,6 @@ def upgrade_password_reset(connection):
 
     actual = registry()
     if actual == expected_after:
-        call_command('migrate', check=True, interactive=False, verbosity=0)
         print('ELEVAGE_SCHEMA_READY_0038', flush=True)
         return
     if actual != expected_before:
@@ -73,7 +72,7 @@ def upgrade_password_reset(connection):
     if (os.environ.get('ELEVAGE_ALLOW_RESET_UPGRADE') != 'true' or
             len(backup) != 64 or any(c not in '0123456789abcdefABCDEF' for c in backup)):
         raise RuntimeError('EXPLICIT_RESET_UPGRADE_AND_BACKUP_REQUIRED')
-    plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+    plan = executor.migration_plan([target])
     if len(plan) != 1 or plan[0][1] or (plan[0][0].app_label, plan[0][0].name) != target or not plan[0][0].atomic:
         raise RuntimeError('RESET_MIGRATION_PLAN_REFUSED')
     operations = plan[0][0].operations
@@ -96,7 +95,6 @@ def upgrade_password_reset(connection):
         call_command('migrate', 'core', target[1], interactive=False, verbosity=0)
         if registry() != expected_after or historical_snapshot(connection, before) != before:
             raise RuntimeError('HISTORICAL_DATA_CHANGED')
-        call_command('migrate', check=True, interactive=False, verbosity=0)
     print('ELEVAGE_RESET_UPGRADE_COMMITTED ' + json.dumps({
         'historical_data_unchanged': True, 'historical_tables_checked': len(before),
         'historical_rows_checked': sum(item['count'] for item in before.values()),
@@ -129,6 +127,10 @@ def upgrade():
             raise RuntimeError('TLS_REQUIRED')
         cursor.execute("SELECT count(*),max(name) FROM django_migrations WHERE app='core'")
         core_count, core_latest = cursor.fetchone()
+    if (core_count, core_latest) in {(38, '0038_passwordresetlimit'), (49, '0049_health_fact_history')}:
+        from .stocks_upgrade import upgrade_stocks
+        upgrade_stocks(connection)
+        return
     if (core_count, core_latest) in {
             (37, '0037_offline_business_revocation'), (38, '0038_passwordresetlimit')}:
         upgrade_password_reset(connection)

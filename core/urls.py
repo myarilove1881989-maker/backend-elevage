@@ -21,7 +21,14 @@ router = DefaultRouter()
 router.register("tasks", views.TaskViewSet)
 
 
+from .feed_purchase_views import catalog as feed_catalog, correction as feed_correction
+
+from .feed_transfers import transfer as feed_transfer
+
 urlpatterns = [
+    path('feed-transfers/', feed_transfer),
+    path('feed-supplies/', feed_catalog),
+    path('depenses/supply/<int:pk>/', feed_correction),
     path('lots/<int:pk>/lifecycle/',lifecycle),
     path('maintenance/<str:kind>/', owner_maintenance),
     path('maintenance/<str:kind>/<int:pk>/', owner_maintenance),
@@ -134,3 +141,9 @@ urlpatterns = [
     path("alimentation/distributions/<int:pk>/", views.api_consommation_aliment_detail),
     path("production/pesees/", views.api_pesees_production),
 ]
+
+from . import vaccine_views
+urlpatterns += [path('vaccine-supplies/',vaccine_views.catalog),path('vaccinations/',vaccine_views.vaccinations),path('vaccinations/<int:pk>/',vaccine_views.detail)]
+
+from . import stock_dashboard_views
+urlpatterns += [path("supply-products/<uuid:pk>/threshold/",stock_dashboard_views.threshold),path("supply-products/<uuid:pk>/history/",stock_dashboard_views.history)]

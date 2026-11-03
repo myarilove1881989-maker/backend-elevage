@@ -85,10 +85,13 @@ class RegisterSerializer(serializers.ModelSerializer):
         from .models import CategorieDepense
 
         for nom in categories:
-            CategorieDepense.objects.create(
-            nom=nom,
-            exploitation=exploitation
-        )
+            category = CategorieDepense.objects.create(nom=nom, exploitation=exploitation)
+            if nom == 'Vaccin':
+                from .supply_models import SupplyCategoryBinding
+                SupplyCategoryBinding.objects.create(category=category,purpose='VACCINE')
+            if nom == 'Aliment':  # Explicit seed mapping, never runtime label detection.
+                from .supply_models import SupplyCategoryBinding
+                SupplyCategoryBinding.objects.create(category=category, purpose='FEED')
 
         ensure_species_catalog(exploitation)
 
@@ -662,6 +665,11 @@ class VenteOeufsSerializer(serializers.ModelSerializer):
 
 
 class ConsommationAlimentSerializer(serializers.ModelSerializer):
+    physical_stock = serializers.SerializerMethodField()
+    def get_physical_stock(self,obj):
+        from .feed_stock import details
+        return details(obj) or None
+
     lot_nom = serializers.CharField(source="lot.nom", read_only=True)
     categorie_depense = serializers.CharField(
         source="depense.categorie.nom",
@@ -681,6 +689,7 @@ class ConsommationAlimentSerializer(serializers.ModelSerializer):
             "lot_nom",
             "date",
             "distribution_at",
+            "physical_stock",
             "aliment",
             "quantite_kg",
             "prix_kg",

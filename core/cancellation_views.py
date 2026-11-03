@@ -1,4 +1,5 @@
 """Online cancellation of autonomous expenses; never rewrites V1 submissions."""
+from .supply_models import SupplyReceipt
 from uuid import UUID
 from django.db import transaction, IntegrityError
 from django.utils import timezone
@@ -38,7 +39,13 @@ def cancel_expense(request, pk):
             return Response({'id': previous.pk, 'original_id': expense.pk, 'status': 'CANCELLED', 'replayed': True})
         if expense.voided_at is not None:
             raise ValidationError('BUSINESS_EFFECT_ALREADY_REVERSED')
-        if ConsommationAliment.history.filter(depense_id=expense.pk).exists():
+        if SupplyReceipt.objects.filter(expense_id=expense.pk, operation__kind='FEED_PURCHASE').exists():
+            from .feed_purchases import cancel
+            cancel(request.user, expense, operation_uuid, reason)
+            farm.business_revision += 1
+            farm.save(update_fields=['business_revision'])
+            return Response({'original_id': expense.pk, 'status': 'CANCELLED', 'replayed': False})
+        if (ConsommationAliment.history.filter(depense_id=expense.pk).exists() or SupplyReceipt.objects.filter(expense_id=expense.pk).exists()):
             raise ValidationError('LINKED_FEED_CANCELLATION_NOT_SUPPORTED')
         if AuditEvent.objects.filter(entity_type='core.depense', entity_id=str(expense.pk), operation_id__isnull=False).exists():
             raise ValidationError('V1_RECONCILIATION_REQUIRED')

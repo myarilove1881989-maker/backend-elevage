@@ -29,6 +29,7 @@ def capabilities_for(user, *, owner_http=False):
     # Signed V1 grants retain their existing operator capability contract.
     writer = active and (member.role == 'OPERATEUR' or (owner and owner_http))
     return {
+        'feed_stock_contract': 1, 'vaccine_stock_contract': 1, 'health_agenda_contract': 1,
         'can_view_business': active, 'can_view_finance': active,
         'can_create_sale': writer, 'can_create_expense': writer,
         'can_create_terrain_operation': writer, 'requires_primary_device': not legacy and not (owner and owner_http),

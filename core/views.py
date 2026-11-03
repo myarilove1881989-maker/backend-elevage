@@ -1,3 +1,4 @@
+from .supply_models import SupplyReceipt
 from urllib import request
 
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
@@ -1230,7 +1231,7 @@ def api_categories_depense(request):
     categories = CategorieDepense.objects.filter(
         exploitation=request.user.exploitation
     )
-    data = [{"id": c.id, "nom": c.nom} for c in categories]
+    data = [{"id": c.id, "nom": c.nom, "stock_purpose": getattr(getattr(c, "supply_binding", None), "purpose", None)} for c in categories.select_related("supply_binding")]
     return Response(data)
 # ===============================
 # CREATE DEPENSE (FIX)
@@ -1239,6 +1240,12 @@ def api_categories_depense(request):
 @permission_classes([IsAuthenticated, HasExploitation])
 @audited_endpoint
 def api_create_depense(request):
+    if 'vaccine_supply' in request.data:
+        from .vaccine_services import purchase as vaccine_purchase
+        return Response(vaccine_purchase(request.user,dict(request.data)),status=201)
+    if 'feed_supply' in request.data:
+        from .feed_purchases import purchase
+        return Response(purchase(request.user, request.data), status=201)
 
     lot_id = request.data.get("lot")
     categorie_id = request.data.get("categorie")
@@ -1295,7 +1302,7 @@ def api_delete_depense(request, pk):
         return Response({"error": "Accès interdit"}, status=403)
 
     from .owner_http import owner_context
-    if owner_context(request.user,request.user.exploitation_id) and ConsommationAliment.history.filter(depense_id=depense.pk).exists():
+    if owner_context(request.user,request.user.exploitation_id) and (ConsommationAliment.history.filter(depense_id=depense.pk).exists() or SupplyReceipt.objects.filter(expense_id=depense.pk).exists()):
         return Response({'error':'Dépense liée à une alimentation : correction coordonnée requise.'},status=400)
     depense.delete()
 
@@ -1855,6 +1862,10 @@ def api_statistiques_oeufs(request):
 @permission_classes([IsAuthenticated, HasExploitation])
 @audited_endpoint
 def api_consommations_aliment(request):
+    if request.method == "POST" and request.data.get('stock_version') == 1:
+        from .feed_stock import distribute, details
+        item=distribute(request.user, request.data)
+        return Response({**ConsommationAlimentSerializer(item,context={'request':request}).data,**details(item)},status=201)
     if request.method == "POST":
         serializer = ConsommationAlimentSerializer(
             data=request.data,
@@ -1907,6 +1918,22 @@ def api_consommations_aliment(request):
 @permission_classes([IsAuthenticated, HasExploitation])
 @audited_endpoint
 def api_consommation_aliment_detail(request, pk):
+    # A successful cancellation leaves the active queryset. Recover only an
+    # already recorded stock command; its exact fingerprint and author are
+    # revalidated by the same service before returning a historical result.
+    if request.method in {'PATCH','PUT','DELETE'} and request.data.get('operation_uuid'):
+        from uuid import UUID
+        from .supply_models import SupplyOperation
+        try:
+            retry_uuid=UUID(str(request.data['operation_uuid']))
+        except (ValueError,TypeError,AttributeError):
+            retry_uuid=None
+        retry_kind='FEED_DIST_CANCEL' if request.method=='DELETE' else 'FEED_DIST_EDIT'
+        if retry_uuid and SupplyOperation.objects.filter(exploitation_id=request.user.exploitation_id,
+                operation_uuid=retry_uuid,kind=retry_kind,payload__distribution=pk).exists():
+            from .feed_stock import edit_distribution, details
+            item=edit_distribution(request.user,pk,{k:v for k,v in request.data.items() if k!='confirm'},cancel=request.method=='DELETE')
+            return Response({**ConsommationAlimentSerializer(item,context={'request':request}).data,**details(item)})
     try:
         consommation = ConsommationAliment.objects.select_related(
             "lot", "depense", "depense__categorie"
@@ -1924,6 +1951,10 @@ def api_consommation_aliment_detail(request, pk):
         from .owner_maintenance import classic
         classic(consommation)
         if consommation.depense_id: classic(consommation.depense)
+    if request.method in {'PATCH','PUT','DELETE'} and hasattr(consommation,'physical_feed_link'):
+        from .feed_stock import edit_distribution, details
+        item=edit_distribution(request.user,consommation.pk,{k:v for k,v in request.data.items() if k!='confirm'},cancel=request.method=='DELETE')
+        return Response({**ConsommationAlimentSerializer(item,context={'request':request}).data,**details(item)})
     if request.method == "DELETE":
         consommation.delete()
         return Response(status=204)

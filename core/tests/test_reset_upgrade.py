@@ -17,7 +17,7 @@ class ResetUpgradeTests(TransactionTestCase):
         self.before = historical_snapshot(connection)
 
     def tearDown(self):
-        MigrationExecutor(connection).migrate([('core','0038_passwordresetlimit')])
+        MigrationExecutor(connection).migrate([('core','0049_health_fact_history')])
 
     def test_unapproved_or_missing_backup_leaves_all_historical_rows_untouched(self):
         for flag, backup in [('false','a'*64), ('true',''), ('true','not-a-digest')]:
