@@ -189,3 +189,17 @@ class SupplyCategoryBinding(AuditedModel):
 
     class Meta:
         constraints = [models.CheckConstraint(condition=Q(purpose='FEED'), name='supply_category_feed_only')]
+
+
+class FeedDistributionLink(SupplyFact):
+    distribution = models.OneToOneField('core.ConsommationAliment', on_delete=models.PROTECT, related_name='physical_feed_link')
+    operation = models.OneToOneField(SupplyOperation, on_delete=models.PROTECT)
+    product = models.ForeignKey(SupplyProduct, on_delete=models.PROTECT)
+    source_lot = models.ForeignKey('core.Lot', null=True, blank=True, on_delete=models.PROTECT)
+
+    def clean(self):
+        farm=self.operation.exploitation_id
+        if self.distribution.exploitation_id!=farm or self.product.exploitation_id!=farm:
+            raise ValidationError('SUPPLY_OUTSIDE_FARM')
+        if self.source_lot_id and self.source_lot_id!=self.distribution.lot_id:
+            raise ValidationError('FEED_RESERVED_FOR_ANOTHER_LOT')

@@ -87,6 +87,10 @@ class ExpenseInput(serializers.Serializer):
 
 
 def expense(row, user):
+    if row.payload.get('stock_version') == 1:
+        create_only(row)
+        from .feed_terrain import purchase as stock_purchase
+        return stock_purchase(row, user)
     create_only(row)
     payload, lot = data_with_lot(row, ['montant', 'categorie_id', 'note'])
     serializer = ExpenseInput(data=payload); serializer.is_valid(raise_exception=True)
@@ -103,6 +107,9 @@ def expense(row, user):
 
 
 def feed(row, user):
+    if row.payload.get('stock_version') == 1:
+        from .feed_terrain import feed as stock_feed
+        return stock_feed(row, user)
     create_only(row)
     payload, lot = data_with_lot(row, ['aliment', 'quantite_kg', 'prix_kg', 'note', 'depense_ref'])
     expense_ref = payload.pop('depense_ref', None)
@@ -225,7 +232,7 @@ HANDLERS = {'DEPENSE':expense,'ALIMENTATION':feed,'PESEE':weighing,'COLLECTE_OEU
     'MORTALITE':removal,'DON':removal,'VOL':removal,'ACHAT':purchase,'NAISSANCE':birth}
 from .business_authorization import guarded_handler
 from .permission_catalog import operation_action
-HANDLERS = {kind: guarded_handler(None if kind == 'COLLECTE_OEUFS' else operation_action(kind, 'CREATE'), handler)
+HANDLERS = {kind: guarded_handler(None if kind in {'COLLECTE_OEUFS','ALIMENTATION'} else operation_action(kind, 'CREATE'), handler)
             for kind, handler in HANDLERS.items()}
 # Exported direct service calls get the same boundary as dispatch-table calls.
 for _kind, _handler in HANDLERS.items():

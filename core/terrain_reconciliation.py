@@ -160,7 +160,10 @@ def decide(request, operation_uuid, data):
     # Presence, not validity, identifies the fine protocol: a malformed V2
     # contract must never fall through to historical V1 decisions.
     if has_fine_contract(row.offline_authorization):
-        raise PermissionDenied('V2_RECONCILIATION_READ_ONLY', code='V2_RECONCILIATION_READ_ONLY')
+        safe_feed_cancel=(row.payload.get('stock_version')==1 and row.entity_type in {'DEPENSE','ALIMENTATION'}
+            and member.role=='OWNER' and data['action']=='CANCEL')
+        if not safe_feed_cancel:
+            raise PermissionDenied('V2_RECONCILIATION_READ_ONLY', code='V2_RECONCILIATION_READ_ONLY')
     # Recheck authorization after the farm lock and prove a delegated tablet here,
     # so device replacement and business decisions use farm -> device lock order.
     member = require_decider(request)

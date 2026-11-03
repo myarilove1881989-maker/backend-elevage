@@ -206,7 +206,7 @@ def execute(actor, farm_id, operation_uuid, kind, payload, *, reason='', occurre
         original = None
         if kind == 'REVERSE':
             original = _object(SupplyOperation, payload['original'], exploitation=farm)
-            if original.kind in {'OPEN','REVERSE','FEED_PURCHASE','FEED_CORRECT','FEED_CANCEL'} or SupplyOperation.objects.filter(reverses=original).exists():
+            if original.kind in {'OPEN','REVERSE','FEED_PURCHASE','FEED_CORRECT','FEED_CANCEL','FEED_DISTRIBUTION','FEED_DIST_EDIT','FEED_DIST_CANCEL'} or SupplyOperation.objects.filter(reverses=original).exists():
                 fail('SUPPLY_REVERSAL_NOT_ALLOWED')
         operation = SupplyOperation.objects.create(exploitation=farm, operation_uuid=operation_uuid,
             kind=kind, author=actor, payload=payload, fingerprint=digest, reason=reason,

@@ -29,6 +29,10 @@ def checked(function, *args, **kwargs):
 
 def guard(actor, action):
     context = current_actor_context()
+    if context and context.source == 'OFFLINE':
+        from .feed_stock import stock_actor
+        stock_actor(actor, action)
+        return
     if not context or context.source != 'ONLINE' or context.author_id != actor.pk or context.exploitation_id != actor.exploitation_id:
         raise PermissionDenied('CONNECTED_CONTEXT_REQUIRED')
     authorize(actor, actor.exploitation_id, action)

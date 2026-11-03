@@ -155,6 +155,15 @@ def receipt(row):
         operation_type='REVERSE', payload__original_operation_id=str(row.client_operation_id),
         outcome__business_status='CONFIRMED').first()
     data['cancellation_operation_id'] = str(cancellation.client_operation_id) if cancellation else None
+    if row.payload.get('stock_version') == 1 and row.entity_type in {'DEPENSE','ALIMENTATION'}:
+        from .feed_stock import snapshot
+        data['feed_stock_snapshot'] = snapshot(row.exploitation_id)
+        if row.entity_type == 'ALIMENTATION' and result.server_entity_id:
+            from .models import ConsommationAliment
+            from .serializers import ConsommationAlimentSerializer
+            item=ConsommationAliment.history.filter(pk=result.server_entity_id,exploitation_id=row.exploitation_id).first()
+            if item is not None:
+                data['feed_distribution_snapshot']={**ConsommationAlimentSerializer(item).data,'exploitation':row.exploitation_id,'voided':item.voided_at is not None}
     if row.entity_type == 'ENCAISSEMENT':
         from .models import EncaissementTerrain
         cash = EncaissementTerrain.objects.filter(submission=row).first()

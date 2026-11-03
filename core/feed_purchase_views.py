@@ -26,7 +26,7 @@ def catalog(request):
         rows.append({'id':str(product.pk),'name':product.name,'positions':positions})
     return Response({'products':rows,'species':list(Espece.objects.filter(exploitation_id=farm).values('id','nom')),
         'lots':list(Lot.objects.filter(exploitation_id=farm,date_fin__isnull=True).exclude(statut_production='TERMINE').values('id','nom','espece_id')),
-        'confirmed':True,'confirmed_business_revision':revision})
+        'confirmed':True,'confirmed_business_revision':revision,'stock_contract':1})
 
 
 @api_view(['PATCH'])

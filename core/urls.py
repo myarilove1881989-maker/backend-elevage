@@ -23,7 +23,10 @@ router.register("tasks", views.TaskViewSet)
 
 from .feed_purchase_views import catalog as feed_catalog, correction as feed_correction
 
+from .feed_transfers import transfer as feed_transfer
+
 urlpatterns = [
+    path('feed-transfers/', feed_transfer),
     path('feed-supplies/', feed_catalog),
     path('depenses/supply/<int:pk>/', feed_correction),
     path('lots/<int:pk>/lifecycle/',lifecycle),

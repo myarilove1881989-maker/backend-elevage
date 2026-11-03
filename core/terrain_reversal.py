@@ -148,6 +148,8 @@ def reverse_effect(row, outcome, data):
         Lot.objects.select_for_update().get(pk=entity.lot_id, exploitation_id=row.exploitation_id)
         if row.entity_type == 'DEPENSE' and (ConsommationAliment.objects.filter(depense_id=pk).exists() or SupplyReceipt.objects.filter(expense_id=pk).exists()):
             raise ValidationError('EXPENSE_HAS_ACTIVE_FEED_DECLARATION')
+        if row.entity_type == 'ALIMENTATION' and hasattr(entity,'physical_feed_link'):
+            raise ValidationError('PHYSICAL_FEED_DEDICATED_CORRECTION_REQUIRED')
         void(entity, data['decision_uuid'])
         outcome.business_status = 'SUPERSEDED'
         outcome.reason_code = 'BUSINESS_EFFECT_REVERSED'
