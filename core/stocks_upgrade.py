@@ -59,7 +59,7 @@ def upgrade_stocks(connection):
         call_command('migrate','core',target[1],interactive=False,verbosity=0)
         observed=historical_snapshot(connection,baseline)
         if observed!=baseline:
-            print('ELEVAGE_STOCKS_HISTORY_DIFFERENCES '+json.dumps({k:{'before':{'count':baseline[k]['count'],'sha256':baseline[k]['sha256']},'after':{'count':observed[k]['count'],'sha256':observed[k]['sha256']}} for k in baseline if observed.get(k)!=baseline[k]},sort_keys=True),flush=True)
+            print('ELEVAGE_STOCKS_HISTORY_DIFFERENCES '+json.dumps({k:{'before':{'count':baseline[k]['count'],'sha256':baseline[k]['sha256']},'after':{'count':observed.get(k,{}).get('count'),'sha256':observed.get(k,{}).get('sha256')}} for k in baseline if observed.get(k)!=baseline[k]},sort_keys=True),flush=True)
         if registry()!=after_core or observed!=baseline:
             raise RuntimeError('HISTORICAL_DATA_CHANGED')
         with connection.cursor() as c:c.execute('SET CONSTRAINTS ALL IMMEDIATE')
