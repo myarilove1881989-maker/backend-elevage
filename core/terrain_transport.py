@@ -134,6 +134,17 @@ def verify_transport(request, purpose):
     return device
 
 
+def health_receipt_readable(row):
+    from .offline_permissions import fine_contract
+    from .access_policy import effective_permissions
+    grant=row.offline_authorization
+    try:
+        codes=fine_contract(grant)
+        return (grant.capabilities.get('health_agenda_contract')==1 and codes is not None and 'agenda.read' in codes
+            and grant.membership.is_active and grant.membership.user.is_active and 'agenda.read' in effective_permissions(grant.membership))
+    except ValueError:return False
+
+
 def receipt(row):
     result = row.outcome
     decision = row.decisions.order_by('-decided_at', '-pk').first()
@@ -162,7 +173,13 @@ def receipt(row):
             from .vaccination_models import Vaccination
             from .vaccine_services import serialize
             item=Vaccination.objects.filter(pk=result.server_entity_id,exploitation_id=row.exploitation_id).first()
-            if item is not None:data['vaccination_snapshot']=serialize(item)
+            if item is not None:
+                data['vaccination_snapshot']=serialize(item)
+                from .health_models import VaccinationTaskLink
+                linked=VaccinationTaskLink.objects.select_related('task').filter(vaccination=item).first()
+                if linked and health_receipt_readable(row):
+                    from .task_views import AgendaSerializer
+                    data['health_task_snapshot']=AgendaSerializer(linked.task).data
     if row.payload.get('stock_version') == 1 and row.entity_type in {'DEPENSE','ALIMENTATION'}:
         from .feed_stock import snapshot
         data['feed_stock_snapshot'] = snapshot(row.exploitation_id)
@@ -184,7 +201,11 @@ def receipt(row):
         from .task_views import AgendaSerializer
         task = Task.objects.filter(pk=row.payload['task_id'],exploitation_id=row.exploitation_id).first()
         if task:
-            data['task_snapshot'] = {**AgendaSerializer(task).data,'exploitation':row.exploitation_id}
+            snapshot={**AgendaSerializer(task).data,'exploitation':row.exploitation_id}
+            if snapshot.get('health') is not None and health_receipt_readable(row):data['health_task_snapshot']=snapshot
+            # Keep the historical TASK receipt shape; new metadata is additive
+            # in a separate optional field ignored by older clients.
+            data['task_snapshot']={key:value for key,value in snapshot.items() if key not in {'health','cancelled_by','cancelled_at','cancellation_reason'}}
     return data
 
 

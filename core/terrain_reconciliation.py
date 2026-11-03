@@ -160,7 +160,8 @@ def decide(request, operation_uuid, data):
     # Presence, not validity, identifies the fine protocol: a malformed V2
     # contract must never fall through to historical V1 decisions.
     if has_fine_contract(row.offline_authorization):
-        safe_feed_cancel=(((row.payload.get('stock_version')==1 and row.entity_type in {'DEPENSE','ALIMENTATION'}) or (row.payload.get('vaccine_version')==1 and row.entity_type in {'DEPENSE','VACCINATION'}))
+        from .health_agenda import task_cancel_candidate
+        safe_feed_cancel=(((row.payload.get('stock_version')==1 and row.entity_type in {'DEPENSE','ALIMENTATION'}) or (row.payload.get('vaccine_version')==1 and row.entity_type in {'DEPENSE','VACCINATION'}) or task_cancel_candidate(row))
             and member.role=='OWNER' and data['action']=='CANCEL')
         if not safe_feed_cancel:
             raise PermissionDenied('V2_RECONCILIATION_READ_ONLY', code='V2_RECONCILIATION_READ_ONLY')

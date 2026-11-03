@@ -57,6 +57,9 @@ def cache_page(request):
     queryset = models[collection].objects.filter(**{tenant:member.exploitation_id}, pk__gt=after)
     if collection == 'sales':
         queryset = queryset.select_related('detail_oeufs').annotate(allocated=Sum('lettrages__montant',filter=Q(lettrages__voided_at__isnull=True)))
+    if collection == 'tasks':
+        from .access_policy import effective_permissions
+        if 'agenda.read' not in effective_permissions(member):queryset=queryset.filter(health_plan__isnull=True)
     if collection == 'tasks' and member.role == 'OPERATEUR':
         queryset = queryset.filter(Q(assigned_to_id=request.user.pk) | Q(assigned_to__isnull=True))
     if collection == 'lots':

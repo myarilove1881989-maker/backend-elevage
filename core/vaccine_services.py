@@ -106,11 +106,13 @@ def purchase(actor,body):
 
 
 def serialize(item):
+    from .health_models import VaccinationTaskLink
+    link=VaccinationTaskLink.objects.select_related('task').filter(vaccination=item).first()
     op=item.current
     return {'id':item.pk,'exploitation':item.exploitation_id,'lot':item.lot_id,'species':item.lot.espece_id,
         'product':str(item.product_id),'vaccine':item.product.name,'vaccinated_at':item.vaccinated_at.isoformat(),
         'animals':item.animals,'observations':item.observations,'operator':item.created_by_id,
-        'operator_name':item.created_by.username,'version':f'vac:{op.pk}','voided':item.voided_at is not None,
+        'operator_name':item.created_by.username,'planned_task':({'id':link.task_id,'version':link.task.version,'date':str(link.task.date)} if link else None),'version':f'vac:{op.pk}','voided':item.voided_at is not None,
         'allocations':op.payload.get('allocations',[]),'operation_uuid':str(op.operation_uuid)}
 
 
@@ -163,7 +165,7 @@ def administer(actor,body,pk=None,cancel=False):
     actor_guard(actor,action)
     farm=Exploitation.objects.select_for_update().get(pk=actor.exploitation_id);actor_guard(actor,action)
     required={'operation_uuid','expected_version','reason'} if pk else {'operation_uuid','lot','product','vaccinated_at','animals','allocations'}
-    optional=set() if cancel else ({'vaccinated_at','animals','allocations','observations'} if pk else {'observations','species'})
+    optional=set() if cancel else ({'vaccinated_at','animals','allocations','observations'} if pk else {'observations','species','task_id','task_version'})
     if not isinstance(body,dict) or not required<=set(body) or set(body)-required-optional:raise ValidationError('VACCINATION_FIELDS_INVALID')
     if pk and (not isinstance(body['reason'],str) or len(body['reason'].strip())<3):raise ValidationError('REASON_REQUIRED')
     payload={**body,**({'vaccination':pk} if pk else {})}
@@ -200,7 +202,23 @@ def administer(actor,body,pk=None,cancel=False):
     if cancel:item.voided_at=timezone.now()
     else:
         item.animals=integer(body.get('animals'),0);item.vaccinated_at=at
+        if pk and item.animals>0:
+            from .health_models import VaccinationTaskLink
+            prior_link=VaccinationTaskLink.objects.filter(vaccination=item).first()
+            if prior_link and prior_link.task.vaccination_links.filter(vaccination__voided_at__isnull=True,vaccination__animals__gt=0).exclude(vaccination=item).exists():
+                raise ValidationError('HEALTH_TASK_ALREADY_FULFILLED')
         item.observations=serializers.CharField(max_length=2000,allow_blank=True).run_validation(body.get('observations',''))
+        planned_task=None
+        if not pk and ('task_id' in body or 'task_version' in body):
+            from .health_agenda import validate_link
+            if item.animals<1:raise ValidationError('LOSS_CANNOT_FULFIL_HEALTH_TASK')
+            planned_task=validate_link(actor,item,body.get('task_id'),body.get('task_version'))
         _consume(actor,item,op,body.get('allocations'),at)
     item.current=op;item.save()
+    from .health_models import VaccinationTaskLink
+    if not cancel and not pk and planned_task is not None:
+        checked(VaccinationTaskLink.objects.create,task=planned_task,vaccination=item)
+    existing=VaccinationTaskLink.objects.select_related('task').filter(vaccination=item).first()
+    if existing:
+        task=existing.task;task.version+=1;task.save(update_fields=['version','updated_at'])
     return item

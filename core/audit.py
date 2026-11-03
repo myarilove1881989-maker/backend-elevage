@@ -3,7 +3,7 @@ import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from django.db import models, transaction
@@ -44,7 +44,7 @@ def safe_data(value):
                 if not any(secret in str(k).lower() for secret in SECRET_NAMES)}
     if isinstance(value, (list, tuple)):
         return [safe_data(v) for v in value]
-    if isinstance(value, (datetime, date, Decimal, uuid.UUID)):
+    if isinstance(value, (datetime, date, time, Decimal, uuid.UUID)):
         return str(value)
     return value
 

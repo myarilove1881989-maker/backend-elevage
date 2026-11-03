@@ -15,7 +15,17 @@ from .request_context import online_context
 from .access_policy import authorize, effective_permissions
 
 
+from .health_task_actions import HealthTaskActions
+
+
 class AgendaSerializer(serializers.ModelSerializer):
+    health = serializers.SerializerMethodField()
+
+    def get_health(self,task):
+        from .health_agenda import summary
+        request=self.context.get('request')
+        if request and 'agenda.read' not in effective_permissions(require_member(request.user)):return None
+        return summary(task)
     expected_version = serializers.IntegerField(write_only=True, required=False)
 
     class Meta:
@@ -23,7 +33,7 @@ class AgendaSerializer(serializers.ModelSerializer):
         fields = ('id', 'title', 'date', 'description', 'priority', 'status',
                   'assigned_to', 'created_by', 'created_at', 'updated_at',
                   'completed_by', 'completed_at', 'report', 'version', 'expected_version')
-        fields += ('cancelled_by', 'cancelled_at', 'cancellation_reason')
+        fields += ('cancelled_by', 'cancelled_at', 'cancellation_reason','health')
         read_only_fields = ('created_by', 'created_at', 'updated_at', 'completed_by',
                             'completed_at', 'version')
         read_only_fields += ('cancelled_by', 'cancelled_at')
@@ -33,6 +43,8 @@ class AgendaSerializer(serializers.ModelSerializer):
         member = require_member(user)
         rights = effective_permissions(member)
         planner = 'agenda.plan' in rights
+        if self.instance and hasattr(self.instance,'health_plan') and not self.context.get('health_planning') and set(self.initial_data)&{'date','assigned_to','title','description'}:
+            raise ValidationError('HEALTH_DEDICATED_RESCHEDULE_REQUIRED')
         if attrs.get('status') == 'CANCELLED':
             if member.role != 'OWNER':
                 raise PermissionDenied('TASK_CANCELLATION_OWNER_ONLY')
@@ -103,7 +115,7 @@ class RepeatedTaskInput(serializers.Serializer):
         return attrs
 
 
-class TaskViewSet(ModelViewSet):
+class TaskViewSet(HealthTaskActions,ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = AgendaSerializer
     permission_classes = [IsAuthenticated, HasExploitation]

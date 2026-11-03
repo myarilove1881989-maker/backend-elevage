@@ -835,3 +835,5 @@ from .supply_models import (FeedDistributionLink, SupplyCategoryBinding, SupplyP
     SupplyVialOpening, SupplyMovement)  # noqa: E402
 
 from .vaccination_models import Vaccination  # noqa: E402
+
+from .health_models import HealthTask,HealthCommand,VaccinationTaskLink  # noqa: E402
