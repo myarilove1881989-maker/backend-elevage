@@ -101,3 +101,8 @@ class StockDashboardTests(OperationFixture,TestCase):
         self.assertEqual(self.api.get(f'/api/supply-products/{foreign.pk}/history/').status_code,404)
         self.assertEqual(self.api.patch(f'/api/supply-products/{foreign.pk}/threshold/',{'alert_threshold':'10','expected_threshold':'0'},format='json').status_code,404)
         foreign.refresh_from_db();self.assertEqual(foreign.alert_threshold,0)
+
+    def test_archived_feed_remains_in_dashboard_but_not_legacy_purchase_choices(self):
+        product=SupplyProduct.objects.create(exploitation=self.farm,kind='FEED',name='Archived',archived=True)
+        self.assertEqual(self.api.get('/api/feed-supplies/').data['products'],[])
+        self.assertEqual(self.api.get('/api/feed-supplies/?presentation=1').data['products'][0]['id'],str(product.pk))

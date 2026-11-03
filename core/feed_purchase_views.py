@@ -20,6 +20,7 @@ def catalog(request):
     Exploitation.objects.select_for_update().get(pk=farm)
     from .feed_stock import snapshot
     data=snapshot(farm,presentation=True)
+    if request.query_params.get('presentation')!='1':data['products']=[p for p in data['products'] if not p['archived']]
     return Response({**data,'species':list(Espece.objects.filter(exploitation_id=farm).values('id','nom')),
         'lots':list(Lot.objects.filter(exploitation_id=farm,date_fin__isnull=True).exclude(statut_production='TERMINE').values('id','nom','espece_id','date_fin','statut_production')),
         'confirmed':True,'stock_contract':1})
