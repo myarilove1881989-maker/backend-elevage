@@ -227,7 +227,7 @@ def compare(first, second):
             other = second[section].get(key)
             delta = Decimal(value) - Decimal(other) if value is not None and other is not None else None
             rate = key.endswith('_percent')
-            differences[key] = {'absolute': money(delta) if delta is not None else None,
+            differences[key] = {'absolute': (money(delta) if section == 'financial' or rate else str(delta)) if delta is not None else None,
                                 'relative_percent': percent(delta, abs(Decimal(other))) if delta is not None and other and Decimal(other) != 0 and not rate else None,
                                 'unit': 'points' if rate else 'value'}
     return {'reference': second, 'differences': differences,
