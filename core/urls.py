@@ -10,6 +10,7 @@ from .credential_views import change_initial_password, reset_operator_password
 from .cancellation_views import expense_cancellation
 from .owner_maintenance import owner_maintenance
 from .lot_lifecycle_views import lifecycle
+from .cycle_report_views import cycle_report
 from .history_views import business_history
 from .cache_views import cache_page
 from .terrain_views import transport_challenge, submissions, submission_status
@@ -26,6 +27,7 @@ from .feed_purchase_views import catalog as feed_catalog, correction as feed_cor
 from .feed_transfers import transfer as feed_transfer
 
 urlpatterns = [
+    path('lots/<int:pk>/cycle-report/', cycle_report),
     path('feed-transfers/', feed_transfer),
     path('feed-supplies/', feed_catalog),
     path('depenses/supply/<int:pk>/', feed_correction),
