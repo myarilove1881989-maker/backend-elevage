@@ -1,3 +1,4 @@
+from datetime import timedelta
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -5,6 +6,8 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import ModelViewSet
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from .models import Task, ExploitationMembership, Exploitation
 from .permissions import HasExploitation, require_member
 from .audit import audit_scope
@@ -12,7 +15,17 @@ from .request_context import online_context
 from .access_policy import authorize, effective_permissions
 
 
+from .health_task_actions import HealthTaskActions
+
+
 class AgendaSerializer(serializers.ModelSerializer):
+    health = serializers.SerializerMethodField()
+
+    def get_health(self,task):
+        from .health_agenda import summary
+        request=self.context.get('request')
+        if request and 'agenda.read' not in effective_permissions(require_member(request.user)):return None
+        return summary(task)
     expected_version = serializers.IntegerField(write_only=True, required=False)
 
     class Meta:
@@ -20,7 +33,7 @@ class AgendaSerializer(serializers.ModelSerializer):
         fields = ('id', 'title', 'date', 'description', 'priority', 'status',
                   'assigned_to', 'created_by', 'created_at', 'updated_at',
                   'completed_by', 'completed_at', 'report', 'version', 'expected_version')
-        fields += ('cancelled_by', 'cancelled_at', 'cancellation_reason')
+        fields += ('cancelled_by', 'cancelled_at', 'cancellation_reason','health')
         read_only_fields = ('created_by', 'created_at', 'updated_at', 'completed_by',
                             'completed_at', 'version')
         read_only_fields += ('cancelled_by', 'cancelled_at')
@@ -30,6 +43,8 @@ class AgendaSerializer(serializers.ModelSerializer):
         member = require_member(user)
         rights = effective_permissions(member)
         planner = 'agenda.plan' in rights
+        if self.instance and hasattr(self.instance,'health_plan') and not self.context.get('health_planning') and set(self.initial_data)&{'date','assigned_to','title','description'}:
+            raise ValidationError('HEALTH_DEDICATED_RESCHEDULE_REQUIRED')
         if attrs.get('status') == 'CANCELLED':
             if member.role != 'OWNER':
                 raise PermissionDenied('TASK_CANCELLATION_OWNER_ONLY')
@@ -79,7 +94,28 @@ class AgendaSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class TaskViewSet(ModelViewSet):
+class RepeatedTaskInput(serializers.Serializer):
+    title = serializers.CharField(max_length=255)
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    # ISO weekday: Monday=1, Sunday=7. All days means daily.
+    weekdays = serializers.ListField(child=serializers.IntegerField(min_value=1, max_value=7),
+                                     min_length=1, max_length=7)
+    assigned_to = serializers.IntegerField(min_value=1)
+
+    def validate(self, attrs):
+        start, end = attrs['start_date'], attrs['end_date']
+        if end < start or (end - start).days > 365:
+            raise ValidationError({'end_date': 'Choisissez une fin après le début, sur un an maximum.'})
+        days = set(attrs['weekdays'])
+        attrs['dates'] = [start + timedelta(days=i) for i in range((end-start).days + 1)
+                         if (start + timedelta(days=i)).isoweekday() in days]
+        if not attrs['dates']:
+            raise ValidationError({'weekdays': 'Aucun jour choisi dans cette période.'})
+        return attrs
+
+
+class TaskViewSet(HealthTaskActions,ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = AgendaSerializer
     permission_classes = [IsAuthenticated, HasExploitation]
@@ -102,6 +138,33 @@ class TaskViewSet(ModelViewSet):
             request.user.exploitation = farm
             authorize(request.user, farm, 'agenda.plan')
             return super().create(request, *args, **kwargs)
+
+    @action(detail=False, methods=['post'], url_path='repeat')
+    def repeat(self, request):
+        # One transaction and farm lock serialize retries/concurrent series.
+        # Occurrences use the existing Task schema and offline progress contract.
+        with transaction.atomic(), audit_scope(online_context(request)):
+            farm = Exploitation.objects.select_for_update().get(pk=request.user.exploitation_id)
+            request.user.exploitation = farm
+            authorize(request.user, farm, 'agenda.plan')
+            incoming = RepeatedTaskInput(data=request.data)
+            incoming.is_valid(raise_exception=True)
+            data = incoming.validated_data
+            created, skipped = [], 0
+            for day in data['dates']:
+                payload = {'title': data['title'], 'date': day,
+                           'assigned_to': data['assigned_to']}
+                serializer = self.get_serializer(data=payload)
+                serializer.is_valid(raise_exception=True)
+                # A retry must not recreate completed/in-progress occurrences.
+                exists = Task.objects.filter(exploitation=farm, title=data['title'],
+                    date=day, assigned_to_id=data['assigned_to']).exclude(status='CANCELLED').exists()
+                if exists:
+                    skipped += 1
+                else:
+                    created.append(serializer.save(exploitation=farm, created_by=request.user))
+            return Response({'created': len(created), 'skipped': skipped,
+                             'tasks': self.get_serializer(created, many=True).data}, status=201)
 
     def perform_create(self, serializer):
         serializer.save(exploitation=self.request.user.exploitation, created_by=self.request.user)

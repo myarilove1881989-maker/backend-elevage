@@ -25,6 +25,8 @@ def get_live_birds(lot):
 
 def get_hen_days(lot, start, end):
     """Effectif par jour, mouvements datés inclus, pour la période sélectionnée."""
+    if lot.date_fin is not None:end=min(end,lot.date_fin)
+    if end<start:return 0
     events = {}
     for row in Achat.objects.filter(lot=lot, date__lte=end).values('date').annotate(n=Sum('quantite')):
         events[row['date']] = events.get(row['date'], 0) + row['n']
@@ -273,8 +275,16 @@ def update_collection(*, serializer):
     from .access_policy import authorize_business_service
     user = serializer.context['request'].user
     authorize_business_service(user, user.exploitation_id, 'egg_collections.update', original)
+    from .owner_http import owner_context
+    if owner_context(user,user.exploitation_id):
+        from .owner_maintenance import classic
+        classic(original)
     Lot.objects.select_for_update().get(pk=original.lot_id)
     original.refresh_from_db()
+    from .egg_collection_version import collection_version
+    expected = serializer.context.get('expected_collection_version')
+    if expected is not None and expected != collection_version(original):
+        raise ValidationError({'expected_version': 'Cette collecte a changé. Rechargez-la avant de la corriger.'})
     if serializer.validated_data.get('lot', original.lot).pk != original.lot_id:
         raise ValidationError({'lot': 'Une collecte ne peut pas changer de lot.'})
     attributed = original.affectations_sortie.aggregate(total=Sum("quantite"))["total"] or 0

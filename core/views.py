@@ -1,3 +1,4 @@
+from .supply_models import SupplyReceipt
 from urllib import request
 
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
@@ -403,7 +404,10 @@ def api_dashboard(request):
     ).aggregate(total=Sum('quantite'))['total'] or 0
 
     marge = total_ca - total_depenses
-    stock_total = sum(get_lot_stock(lot) for lot in lots) if lots.exists() else 0
+    from .lot_lifecycle import closed
+    rows=list(lots)
+    stock_closed=sum(get_lot_stock(lot) for lot in rows if closed(lot))
+    stock_total=sum(get_lot_stock(lot) for lot in rows if not closed(lot))
     pertes = Mouvement.objects.filter(
         lot__in=lots,
         type_mouvement__in=['MORTALITE', 'DON', 'VOL']
@@ -412,6 +416,9 @@ def api_dashboard(request):
     return Response({
         "kpis": {
             "stock": stock_total,
+            "stock_lots_clotures":stock_closed,
+            "lots_clotures":sum(closed(lot) for lot in rows),
+            "stock_total_historique":stock_total+stock_closed,
             "chiffre_affaires": total_ca,
             "depenses": total_depenses,
             "marge": marge,
@@ -669,16 +676,17 @@ def api_delete_mouvement(request, pk):
 # ===============================
 # CLIENT BALANCE UTILS
 # ===============================
+def client_totals(client):
+    sales = Vente.objects.filter(client=client, lot__exploitation_id=client.exploitation_id)
+    billed = sales.aggregate(total=Sum('montant_total'))['total'] or Decimal('0.00')
+    paid = Payment.objects.filter(client=client, exploitation_id=client.exploitation_id).aggregate(
+        total=Sum('montant'))['total'] or Decimal('0.00')
+    return billed, paid
+
+
 def get_client_balance(client):
-    total_ventes = client.ventes.aggregate(
-        total=Sum('montant_total')
-    )['total'] or 0
-
-    total_payments = client.payments.aggregate(
-        total=Sum('montant')
-    )['total'] or 0
-
-    return total_ventes - total_payments
+    billed, paid = client_totals(client)
+    return billed - paid
 
 
 # ===============================
@@ -1146,6 +1154,11 @@ def api_marge_par_lot(request):
 @audited_endpoint
 def api_lots(request):
     lots = Lot.objects.filter(exploitation=request.user.exploitation)
+    from .lot_lifecycle import closed_filter
+    state=request.query_params.get('lot_state','all')
+    if state=='active':lots=lots.exclude(closed_filter())
+    elif state=='closed':lots=lots.filter(closed_filter())
+    elif state!='all':return Response({'error':'Filtre de lots invalide.'},status=400)
     return Response(LotSerializer(lots, many=True).data)
 
 
@@ -1218,7 +1231,7 @@ def api_categories_depense(request):
     categories = CategorieDepense.objects.filter(
         exploitation=request.user.exploitation
     )
-    data = [{"id": c.id, "nom": c.nom} for c in categories]
+    data = [{"id": c.id, "nom": c.nom, "stock_purpose": getattr(getattr(c, "supply_binding", None), "purpose", None)} for c in categories.select_related("supply_binding")]
     return Response(data)
 # ===============================
 # CREATE DEPENSE (FIX)
@@ -1227,6 +1240,12 @@ def api_categories_depense(request):
 @permission_classes([IsAuthenticated, HasExploitation])
 @audited_endpoint
 def api_create_depense(request):
+    if 'vaccine_supply' in request.data:
+        from .vaccine_services import purchase as vaccine_purchase
+        return Response(vaccine_purchase(request.user,dict(request.data)),status=201)
+    if 'feed_supply' in request.data:
+        from .feed_purchases import purchase
+        return Response(purchase(request.user, request.data), status=201)
 
     lot_id = request.data.get("lot")
     categorie_id = request.data.get("categorie")
@@ -1282,6 +1301,9 @@ def api_delete_depense(request, pk):
     if depense.lot.exploitation != request.user.exploitation:
         return Response({"error": "Accès interdit"}, status=403)
 
+    from .owner_http import owner_context
+    if owner_context(request.user,request.user.exploitation_id) and (ConsommationAliment.history.filter(depense_id=depense.pk).exists() or SupplyReceipt.objects.filter(expense_id=depense.pk).exists()):
+        return Response({'error':'Dépense liée à une alimentation : correction coordonnée requise.'},status=400)
     depense.delete()
 
     return Response({"message": "Supprimé"}, status=200)
@@ -1429,47 +1451,26 @@ def api_dettes_clients(request):
 
     exploitation = request.user.exploitation
 
-    clients = Client.objects.filter(
-        ventes__lot__exploitation=exploitation
-    ).distinct()
-
+    # Reverse joins do not apply Vente's active manager automatically.
+    # Select through the explicitly active, tenant-scoped sales queryset.
+    sales = Vente.objects.filter(lot__exploitation=exploitation,
+                                client__exploitation=exploitation)
+    clients = Client.objects.filter(exploitation=exploitation,
+                                    pk__in=sales.values('client_id')).order_by('nom', 'pk')
+    billed = dict(sales.values('client_id').annotate(total=Sum('montant_total')).values_list('client_id', 'total'))
+    paid = dict(Payment.objects.filter(exploitation=exploitation, client__exploitation=exploitation)
+                .values('client_id').annotate(total=Sum('montant')).values_list('client_id', 'total'))
     data = []
-
-    for c in clients:
-        total_facture = c.ventes.filter(
-            lot__exploitation=exploitation
-        ).aggregate(
-            total=Sum('montant_total')
-        )['total'] or 0
-
-        total_paye = c.payments.filter(
-            exploitation=exploitation
-        ).aggregate(
-            total=Sum('montant')
-        )['total'] or 0
-
-        total_facture = float(total_facture)
-        total_paye = float(total_paye)
-
+    for client in clients:
+        total_facture = billed[client.pk]
+        total_paye = paid.get(client.pk, Decimal('0.00'))
         reste = total_facture - total_paye
-
-        if reste == 0:
-            statut = "PAYE"
-        elif total_paye == 0:
-            statut = "IMPAYE"
-        else:
-            statut = "PARTIEL"
-
         data.append({
-            "id": c.id,
-            "nom": c.nom,
-            "total_facture": total_facture,
-            "total_paye": total_paye,
-            "reste": reste,
-            "statut": statut,
-            "telephone": c.telephone,  # 🔥 AJOUT
+            'id': client.pk, 'nom': client.nom, 'telephone': client.telephone,
+            'total_facture': float(total_facture), 'total_paye': float(total_paye),
+            'reste': float(reste),
+            'statut': 'PAYE' if reste <= 0 else ('IMPAYE' if total_paye == 0 else 'PARTIEL'),
         })
-
     return Response(data)
 
 # ===============================
@@ -1694,6 +1695,8 @@ def api_collecte_oeufs_detail(request, pk):
         context={"request": request},
     )
     serializer.is_valid(raise_exception=True)
+    if 'expected_version' in request.data:
+        serializer.context['expected_collection_version'] = request.data['expected_version']
     collection = update_collection(serializer=serializer)
     return Response(CollecteOeufsSerializer(
         collection,
@@ -1859,6 +1862,10 @@ def api_statistiques_oeufs(request):
 @permission_classes([IsAuthenticated, HasExploitation])
 @audited_endpoint
 def api_consommations_aliment(request):
+    if request.method == "POST" and request.data.get('stock_version') == 1:
+        from .feed_stock import distribute, details
+        item=distribute(request.user, request.data)
+        return Response({**ConsommationAlimentSerializer(item,context={'request':request}).data,**details(item)},status=201)
     if request.method == "POST":
         serializer = ConsommationAlimentSerializer(
             data=request.data,
@@ -1911,6 +1918,22 @@ def api_consommations_aliment(request):
 @permission_classes([IsAuthenticated, HasExploitation])
 @audited_endpoint
 def api_consommation_aliment_detail(request, pk):
+    # A successful cancellation leaves the active queryset. Recover only an
+    # already recorded stock command; its exact fingerprint and author are
+    # revalidated by the same service before returning a historical result.
+    if request.method in {'PATCH','PUT','DELETE'} and request.data.get('operation_uuid'):
+        from uuid import UUID
+        from .supply_models import SupplyOperation
+        try:
+            retry_uuid=UUID(str(request.data['operation_uuid']))
+        except (ValueError,TypeError,AttributeError):
+            retry_uuid=None
+        retry_kind='FEED_DIST_CANCEL' if request.method=='DELETE' else 'FEED_DIST_EDIT'
+        if retry_uuid and SupplyOperation.objects.filter(exploitation_id=request.user.exploitation_id,
+                operation_uuid=retry_uuid,kind=retry_kind,payload__distribution=pk).exists():
+            from .feed_stock import edit_distribution, details
+            item=edit_distribution(request.user,pk,{k:v for k,v in request.data.items() if k!='confirm'},cancel=request.method=='DELETE')
+            return Response({**ConsommationAlimentSerializer(item,context={'request':request}).data,**details(item)})
     try:
         consommation = ConsommationAliment.objects.select_related(
             "lot", "depense", "depense__categorie"
@@ -1923,6 +1946,15 @@ def api_consommation_aliment_detail(request, pk):
             consommation,
             context={"request": request},
         ).data)
+    from .owner_http import owner_context
+    if owner_context(request.user,request.user.exploitation_id):
+        from .owner_maintenance import classic
+        classic(consommation)
+        if consommation.depense_id: classic(consommation.depense)
+    if request.method in {'PATCH','PUT','DELETE'} and hasattr(consommation,'physical_feed_link'):
+        from .feed_stock import edit_distribution, details
+        item=edit_distribution(request.user,consommation.pk,{k:v for k,v in request.data.items() if k!='confirm'},cancel=request.method=='DELETE')
+        return Response({**ConsommationAlimentSerializer(item,context={'request':request}).data,**details(item)})
     if request.method == "DELETE":
         consommation.delete()
         return Response(status=204)

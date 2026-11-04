@@ -3,7 +3,7 @@ import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from django.db import models, transaction
@@ -22,6 +22,8 @@ class ActorContext:
     operation_id: uuid.UUID | None = None
     local_entity_id: uuid.UUID | None = None
     business_occurred_at: datetime | None = None
+    owner_http: bool = False  # trusted request scope only, never a grant or database field
+    closed_lot_correction: bool = False
 
 
 _scope = ContextVar("audit_scope", default=None)
@@ -42,7 +44,7 @@ def safe_data(value):
                 if not any(secret in str(k).lower() for secret in SECRET_NAMES)}
     if isinstance(value, (list, tuple)):
         return [safe_data(v) for v in value]
-    if isinstance(value, (datetime, date, Decimal, uuid.UUID)):
+    if isinstance(value, (datetime, date, time, Decimal, uuid.UUID)):
         return str(value)
     return value
 
@@ -135,7 +137,7 @@ def delete_with_audit(objects):
     traced = models.Q(pk__in=[])
     for obj in victims.values():
         context = current_actor_context()
-        if context and context.source == 'ONLINE' and obj._meta.model_name in {
+        if context and context.source == 'ONLINE' and not context.owner_http and obj._meta.model_name in {
             'task', 'achat', 'lot', 'mouvement', 'depense', 'vente', 'venteoeufs',
             'collecteoeufs', 'mouvementoeufs', 'consommationaliment', 'peseeproduction',
             'payment', 'lettrage', 'client', 'expensecancellation',

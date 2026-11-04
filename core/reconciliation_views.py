@@ -1,3 +1,4 @@
+from .health_agenda import task_cancel_candidate
 """Supervision contains server-received originals only, scoped to one farm."""
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
@@ -23,7 +24,7 @@ def reviewer(request):
 def submission_data(row):
     from .offline_permissions import has_fine_contract
     return {'operation_uuid':str(row.client_operation_id), 'entity_type':row.entity_type,
-        'reconciliation_mode':'READ_ONLY_V2' if has_fine_contract(row.offline_authorization) else 'LEGACY_V1',
+        'reconciliation_mode':('FEED_CANCEL_ONLY' if ((row.payload.get('stock_version')==1 and row.entity_type in {'DEPENSE','ALIMENTATION'}) or (row.payload.get('vaccine_version')==1 and row.entity_type in {'DEPENSE','VACCINATION'}) or task_cancel_candidate(row)) and row.outcome.applied_at is None and row.outcome.business_status not in {'NOT_APPLIED','SUPERSEDED'} else 'READ_ONLY_V2') if has_fine_contract(row.offline_authorization) else 'LEGACY_V1',
         'original_author_id':row.author_user_id, 'device_id':row.device_id,
         'business_occurred_at':row.business_occurred_at, 'received_at':row.received_at,
         'original_payload':row.payload, 'decision_version':row.outcome.decision_version,

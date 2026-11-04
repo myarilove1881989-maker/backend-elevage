@@ -46,6 +46,9 @@ def resolve(row, reference, kind='LOT', model=Lot):
         if model is Lot and TerrainEntityMapping.objects.filter(exploitation_id=row.exploitation_id,
             entity_type='LOT',server_entity_id=pk,submission__outcome__business_status='SUPERSEDED').exists():
             raise BusinessConflict('LOT_ORIGIN_REVERSED')
+        if model is Lot and row.operation_type in {'CREATE','UPDATE'}:
+            from .lot_lifecycle import closed,correction_context
+            if closed(entity) and not correction_context():raise BusinessConflict('LOT_CLOSED')
         return entity
     except model.DoesNotExist:
         raise BusinessConflict('REFERENCE_OUTSIDE_FARM')
@@ -84,6 +87,14 @@ class ExpenseInput(serializers.Serializer):
 
 
 def expense(row, user):
+    if row.payload.get('vaccine_version')==1:
+        create_only(row)
+        from .vaccine_views import terrain_purchase
+        return terrain_purchase(row,user)
+    if row.payload.get('stock_version') == 1:
+        create_only(row)
+        from .feed_terrain import purchase as stock_purchase
+        return stock_purchase(row, user)
     create_only(row)
     payload, lot = data_with_lot(row, ['montant', 'categorie_id', 'note'])
     serializer = ExpenseInput(data=payload); serializer.is_valid(raise_exception=True)
@@ -100,6 +111,9 @@ def expense(row, user):
 
 
 def feed(row, user):
+    if row.payload.get('stock_version') == 1:
+        from .feed_terrain import feed as stock_feed
+        return stock_feed(row, user)
     create_only(row)
     payload, lot = data_with_lot(row, ['aliment', 'quantite_kg', 'prix_kg', 'note', 'depense_ref'])
     expense_ref = payload.pop('depense_ref', None)
@@ -124,6 +138,27 @@ def weighing(row, user):
 
 
 def egg_collection(row, user):
+    if row.operation_type == 'UPDATE':
+        from .egg_services import update_collection
+        from .egg_collection_version import collection_version
+        data = dict(row.payload)
+        reference = Reference().run_validation(data.pop('collection_ref', None))
+        original = resolve(row, reference, 'COLLECTE_OEUFS', CollecteOeufs)
+        lot = resolve(row, Reference().run_validation(data.pop('lot_ref', None)))
+        if lot.pk != original.lot_id:
+            raise BusinessConflict('COLLECTION_LOT_MISMATCH')
+        previous = data.pop('previous_quantity', None)
+        if row.expected_server_version != collection_version(original):
+            raise BusinessConflict('COLLECTION_VERSION_CONFLICT')
+        if previous != original.nombre_commercialisable:
+            raise BusinessConflict('COLLECTION_QUANTITY_CONFLICT')
+        allowed = {'nombre_collecte','nombre_casses','nombre_declasses','nombre_consommes_donnes','note'}
+        if set(data) != allowed:
+            raise BusinessConflict('UNKNOWN_BUSINESS_FIELDS')
+        serializer = CollecteOeufsSerializer(original, data=data, partial=True,
+            context=context(user, expected_collection_version=row.expected_server_version))
+        serializer.is_valid(raise_exception=True)
+        return mark_lots(update_collection(serializer=serializer), lot)
     create_only(row)
     payload, lot = data_with_lot(row, ['nombre_collecte','nombre_alveoles','oeufs_restants',
         'nombre_casses','nombre_declasses','nombre_consommes_donnes','note'])
@@ -197,11 +232,12 @@ def birth(row, user):
     return mark_lots(movement, child)
 
 
-HANDLERS = {'DEPENSE':expense,'ALIMENTATION':feed,'PESEE':weighing,'COLLECTE_OEUFS':egg_collection,
+from .vaccine_views import terrain_vaccination
+HANDLERS = {'VACCINATION':terrain_vaccination,'DEPENSE':expense,'ALIMENTATION':feed,'PESEE':weighing,'COLLECTE_OEUFS':egg_collection,
     'MORTALITE':removal,'DON':removal,'VOL':removal,'ACHAT':purchase,'NAISSANCE':birth}
 from .business_authorization import guarded_handler
 from .permission_catalog import operation_action
-HANDLERS = {kind: guarded_handler(operation_action(kind, 'CREATE'), handler)
+HANDLERS = {kind: guarded_handler(None if kind in {'COLLECTE_OEUFS','ALIMENTATION','VACCINATION'} else operation_action(kind, 'CREATE'), handler)
             for kind, handler in HANDLERS.items()}
 # Exported direct service calls get the same boundary as dispatch-table calls.
 for _kind, _handler in HANDLERS.items():

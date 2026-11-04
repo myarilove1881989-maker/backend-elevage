@@ -4,9 +4,13 @@ from rest_framework.routers import DefaultRouter
    
 from . import views, foundation_views as foundation
 from .reset_link_views import validate_link
+from .farm_profile_views import farm_profile
 from .auth_views import MembershipRefreshView, MembershipLoginView, logout
 from .credential_views import change_initial_password, reset_operator_password
 from .cancellation_views import expense_cancellation
+from .owner_maintenance import owner_maintenance
+from .lot_lifecycle_views import lifecycle
+from .cycle_report_views import cycle_report
 from .history_views import business_history
 from .cache_views import cache_page
 from .terrain_views import transport_challenge, submissions, submission_status
@@ -18,7 +22,19 @@ router = DefaultRouter()
 router.register("tasks", views.TaskViewSet)
 
 
+from .feed_purchase_views import catalog as feed_catalog, correction as feed_correction
+
+from .feed_transfers import transfer as feed_transfer
+
 urlpatterns = [
+    path('lots/<int:pk>/cycle-report/', cycle_report),
+    path('feed-transfers/', feed_transfer),
+    path('feed-supplies/', feed_catalog),
+    path('depenses/supply/<int:pk>/', feed_correction),
+    path('lots/<int:pk>/lifecycle/',lifecycle),
+    path('maintenance/<str:kind>/', owner_maintenance),
+    path('maintenance/<str:kind>/<int:pk>/', owner_maintenance),
+    path('farm-profile/', farm_profile),
     path('password/change-initial/', change_initial_password),
     path('memberships/<int:pk>/reset-password/', reset_operator_password),
     path('offline/recovery/', recovery),
@@ -127,3 +143,9 @@ urlpatterns = [
     path("alimentation/distributions/<int:pk>/", views.api_consommation_aliment_detail),
     path("production/pesees/", views.api_pesees_production),
 ]
+
+from . import vaccine_views
+urlpatterns += [path('vaccine-supplies/',vaccine_views.catalog),path('vaccinations/',vaccine_views.vaccinations),path('vaccinations/<int:pk>/',vaccine_views.detail)]
+
+from . import stock_dashboard_views
+urlpatterns += [path("supply-products/<uuid:pk>/threshold/",stock_dashboard_views.threshold),path("supply-products/<uuid:pk>/history/",stock_dashboard_views.history)]
