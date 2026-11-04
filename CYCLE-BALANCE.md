@@ -34,8 +34,8 @@ Une distribution consomme au CMP de sa réserve à cet instant. Calcul Decimal,
 arrondi monétaire à deux décimales uniquement à la restitution.
 Le prix provient de la dépense active du reçu, et la quantité du reçu doit égaler
 l’entrée. Sans reçu valorisé, stock suffisant ou historique simple : non calculable.
-Tout transfert, correction ou annulation dans l’historique du produit/espèce avant
-la référence exclut ce produit de la valorisation ; aucune reconstruction arbitraire.
+Tout transfert, correction ou annulation dans l’historique connu du produit/espèce, y compris après
+la référence, exclut ce produit de la valorisation ; aucune reconstruction arbitraire.
 Vaccins : doses administrées ou perdues × coût du reçu / doses du reçu identifié
 par flacon. Les corrections/annulations rendent la valorisation indisponible mais
 les doses techniques utilisent la version active de la vaccination.
