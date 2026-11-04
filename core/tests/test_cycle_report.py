@@ -250,6 +250,14 @@ class CycleReportTests(TestCase):
         self.assertEqual(v['status'], 'unavailable')
         self.assertIsNone(v['feed_cost'])
 
+    def test_comparison_preserves_gram_precision_for_feed(self):
+        other = Lot.objects.create(nom='Cycle B', exploitation=self.farm, espece=self.species, date_debut=self.start)
+        for lot, quantity in [(self.lot, '1.001'), (other, '1.000')]:
+            ConsommationAliment.objects.create(lot=lot, exploitation=self.farm, date=self.start, quantite_kg=quantity)
+        r = self.get(suffix=f'?compare={other.pk}')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(Decimal(r.data['comparison']['differences']['feed_kg']['absolute']), Decimal('.001'))
+
 
 from core.tests.test_terrain_reconciliation import ReconciliationFixture
 
