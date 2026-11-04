@@ -239,6 +239,17 @@ class CycleReportTests(TestCase):
         self.assertEqual(r['valuation']['status'], 'partial')
         self.assertEqual(r['financial']['charges'], '200.00')
 
+    def test_correction_after_closed_cutoff_invalidates_old_cost_estimate(self):
+        p = SupplyProduct.objects.create(exploitation=self.farm, kind='FEED', name='Correction tardive')
+        self.feed_entry(p, 100, 200, 9)
+        self.feed_exit(p, 20, 8)
+        self.feed_exit(p, 1, 2, kind='CORRECTION')
+        self.lot.date_fin = timezone.localdate()-timedelta(days=4)
+        self.lot.save()
+        v = self.get().data['valuation']
+        self.assertEqual(v['status'], 'unavailable')
+        self.assertIsNone(v['feed_cost'])
+
 
 from core.tests.test_terrain_reconciliation import ReconciliationFixture
 

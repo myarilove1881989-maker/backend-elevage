@@ -41,7 +41,9 @@ def consumption_analysis(lot, start, end):
     ).select_related('operation', 'product', 'vial__receipt__expense__lot').order_by('operation__occurred_at', 'operation_id', 'line'))
     receipts = {r.operation_id: r for r in SupplyReceipt.objects.filter(
         operation__exploitation_id=farm).select_related('expense__lot')}
-    unsupported = {r.product_id for r in rows if r.kind not in {'ENTRY', 'DISTRIBUTION', 'LOSS', 'ADMINISTRATION'}}
+    unsupported = set(SupplyMovement.objects.filter(
+        operation__exploitation_id=farm, species_id=lot.espece_id, product__exploitation_id=farm,
+    ).exclude(kind__in=['ENTRY', 'DISTRIBUTION', 'LOSS', 'ADMINISTRATION']).values_list('product_id', flat=True))
     pools = defaultdict(lambda: [ZERO, ZERO])
     costs = defaultdict(lambda: {'feed': ZERO, 'vaccine': ZERO, 'loss': ZERO})
     relevant = set()
