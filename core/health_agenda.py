@@ -26,7 +26,8 @@ class PlanInput(serializers.Serializer):
     product=serializers.UUIDField()
     lot=serializers.IntegerField(min_value=1)
     species=serializers.IntegerField(min_value=1)
-    date=serializers.DateField()
+    date=serializers.DateField(required=False)
+    dates=serializers.ListField(child=serializers.DateField(),required=False,min_length=1,max_length=366)
     planned_time=serializers.TimeField(required=False,allow_null=True)
     assigned_to=serializers.IntegerField(min_value=1)
     interval_days=serializers.IntegerField(required=False,min_value=1,max_value=365,allow_null=True)
@@ -39,6 +40,12 @@ class PlanInput(serializers.Serializer):
         return super().to_internal_value(data)
 
     def validate(self,p):
+        if ('date' in p)==('dates' in p):raise ValidationError('CHOOSE_HEALTH_DATE_OR_DATES')
+        if 'dates' in p:
+            if len(set(p['dates']))!=len(p['dates']):raise ValidationError('DUPLICATE_HEALTH_DATES')
+            if p.get('interval_days') or p.get('end_date'):raise ValidationError('DATES_RECURRENCE_CONFLICT')
+            if (max(p['dates'])-min(p['dates'])).days>365:raise ValidationError('HEALTH_DATES_RANGE_EXCEEDED')
+            p['dates']=sorted(p['dates'])
         if p.get('planned_time') and p['planned_time'].tzinfo is not None:raise ValidationError('HEALTH_LOCAL_TIME_REQUIRED')
         if set(self.initial_data)-set(self.fields):raise ValidationError('UNKNOWN_HEALTH_PLAN_FIELDS')
         if p.get('interval_days'):
@@ -73,7 +80,7 @@ def plan(request,body):
     ensure_open(lot);authorized_assignee(farm.pk,p['assigned_to'])
     # Bounded explicit occurrences, using existing Task records and serializer.
     from .task_views import AgendaSerializer
-    dates=[p['date']]
+    dates=p.get('dates') or [p['date']]
     if p.get('interval_days'):
         dates=[p['date']+timedelta(days=i) for i in range(0,(p['end_date']-p['date']).days+1,p['interval_days'])]
     tasks=[]
