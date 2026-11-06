@@ -18,3 +18,6 @@ Ne définir ELEVAGE_ALLOW_HEALTH_UPGRADE=true et ELEVAGE_HEALTH_BACKUP_SHA256 qu
 ## Retour arrière
 Ne pas redéployer aveuglément 1f1cd3f sur le schéma 0050 : sa garde de démarrage le refuserait. En cas de retrait du Web, conserver ce backend compatible ou préparer une version antérieure avec une garde explicitement compatible 0050. Ne supprimer aucune table, ne pas inverser la migration et ne restaurer aucune donnée de production sans décision séparée. Le retour Web utilise le commit e735f051af607347bb0edbd1e95ab95730eccd5f.
 Android 118, les formats signés hors ligne et les secrets restent inchangés. Aucun achat de production n’a été effectué.
+
+## Contrôle complémentaire de la garde historique
+La nouvelle migration rendait les anciens tests 0038 → 0049 incompatibles avec le graphe courant. Leurs assertions sont conservées : le contexte de chargement est borné au graphe de cette livraison historique. Un nouveau test vérifie explicitement que la garde historique refuse 0050 et ne modifie aucune donnée. Les gardes de production ne sont pas élargies. La suite finale correspondante (gardes + correctifs) passe : 40 tests PostgreSQL. Les nouveaux tests sont ajoutés à la validation GitHub.
