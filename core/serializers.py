@@ -210,6 +210,8 @@ class DepenseSerializer(serializers.ModelSerializer):
 # ===============================
 class LotDetailSerializer(serializers.ModelSerializer):
 
+    prix_unitaire_origine = serializers.SerializerMethodField()
+
     espece_nom = serializers.CharField(source="espece.nom", read_only=True)
     stock = serializers.ReadOnlyField()
 
@@ -235,8 +237,23 @@ class LotDetailSerializer(serializers.ModelSerializer):
             "stock",
             "mouvements",
             "depenses",
-            "achats",
+            "achats", "prix_unitaire_origine",
         ]
+
+    def get_prix_unitaire_origine(self,obj):
+        from decimal import Decimal
+        from .models import TerrainStockAdjustment
+        if TerrainStockAdjustment.objects.filter(exploitation_id=obj.exploitation_id,lot=obj,kind='ANIMAL').exists():return None
+        entries=list(obj.mouvements.filter(type_mouvement__in=['ACHAT','NAISSANCE']))
+        if entries and all(row.type_mouvement=='NAISSANCE' for row in entries) and not obj.achats.exists():return '0.00'
+        purchases=list(obj.achats.all())
+        if len(entries)!=1 or entries[0].type_mouvement!='ACHAT' or len(purchases)!=1:return None
+        purchase=purchases[0]
+        if purchase.quantite<=0 or entries[0].quantite!=purchase.quantite:return None
+        value=purchase.prix_total/Decimal(purchase.quantite)
+        # Never invent precision or merge multiple origins into an arbitrary cost.
+        if value!=value.quantize(Decimal('0.01')):return None
+        return str(value.quantize(Decimal('0.01')))
 
     def get_achats(self, obj):
         return [
