@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError,PermissionDenied
 from .models import Task,Exploitation,Lot,ExploitationMembership,AuditEvent
-from .health_models import HealthTask,HealthCommand,VaccinationTaskLink
+from .health_models import HealthTask,HealthCommand,VaccinationTaskLink,HealthResponsible
 from .supply_models import SupplyProduct
 from .access_policy import authorize,effective_permissions
 from .lot_lifecycle import ensure_open
@@ -26,19 +26,28 @@ class PlanInput(serializers.Serializer):
     product=serializers.UUIDField()
     lot=serializers.IntegerField(min_value=1)
     species=serializers.IntegerField(min_value=1)
-    date=serializers.DateField()
+    date=serializers.DateField(required=False)
+    dates=serializers.ListField(child=serializers.DateField(),required=False,min_length=1,max_length=366)
     planned_time=serializers.TimeField(required=False,allow_null=True)
-    assigned_to=serializers.IntegerField(min_value=1)
+    assigned_to=serializers.IntegerField(min_value=1,required=False)
+    responsible_id=serializers.IntegerField(min_value=1,required=False)
     interval_days=serializers.IntegerField(required=False,min_value=1,max_value=365,allow_null=True)
     end_date=serializers.DateField(required=False,allow_null=True)
     observations=serializers.CharField(required=False,allow_blank=True,max_length=10000)
 
     def to_internal_value(self,data):
         if not isinstance(data,dict) or set(data)-set(self.fields):raise ValidationError({'non_field_errors':['UNKNOWN_HEALTH_PLAN_FIELDS']})
-        if any(isinstance(data.get(key),(bool,float)) for key in ('interval_days','lot','species','assigned_to')):raise ValidationError({'non_field_errors':['EXPLICIT_INTEGER_REQUIRED']})
+        if any(isinstance(data.get(key),(bool,float)) for key in ('interval_days','lot','species','assigned_to','responsible_id')):raise ValidationError({'non_field_errors':['EXPLICIT_INTEGER_REQUIRED']})
         return super().to_internal_value(data)
 
     def validate(self,p):
+        if ('assigned_to' in p)==('responsible_id' in p):raise ValidationError('CHOOSE_AUTHORIZED_USER_OR_RESPONSIBLE')
+        if ('date' in p)==('dates' in p):raise ValidationError('CHOOSE_HEALTH_DATE_OR_DATES')
+        if 'dates' in p:
+            if len(set(p['dates']))!=len(p['dates']):raise ValidationError('DUPLICATE_HEALTH_DATES')
+            if p.get('interval_days') or p.get('end_date'):raise ValidationError('DATES_RECURRENCE_CONFLICT')
+            if (max(p['dates'])-min(p['dates'])).days>365:raise ValidationError('HEALTH_DATES_RANGE_EXCEEDED')
+            p['dates']=sorted(p['dates'])
         if p.get('planned_time') and p['planned_time'].tzinfo is not None:raise ValidationError('HEALTH_LOCAL_TIME_REQUIRED')
         if set(self.initial_data)-set(self.fields):raise ValidationError('UNKNOWN_HEALTH_PLAN_FIELDS')
         if p.get('interval_days'):
@@ -70,22 +79,27 @@ def plan(request,body):
     product=SupplyProduct.objects.filter(pk=p['product'],exploitation=farm,kind='VACCINE',archived=False).first()
     lot=Lot.objects.filter(pk=p['lot'],exploitation=farm,espece_id=p['species']).first()
     if product is None or lot is None:raise ValidationError('HEALTH_PLAN_OUTSIDE_FARM')
-    ensure_open(lot);authorized_assignee(farm.pk,p['assigned_to'])
+    ensure_open(lot)
+    responsible=None
+    if 'assigned_to' in p:authorized_assignee(farm.pk,p['assigned_to'])
+    else:
+        responsible=HealthResponsible.objects.filter(pk=p['responsible_id'],exploitation=farm).first()
+        if responsible is None:raise ValidationError('HEALTH_RESPONSIBLE_OUTSIDE_FARM')
     # Bounded explicit occurrences, using existing Task records and serializer.
     from .task_views import AgendaSerializer
-    dates=[p['date']]
+    dates=p.get('dates') or [p['date']]
     if p.get('interval_days'):
         dates=[p['date']+timedelta(days=i) for i in range(0,(p['end_date']-p['date']).days+1,p['interval_days'])]
     tasks=[]
     for day in dates:
         existing=HealthTask.objects.filter(product=product,lot=lot,planned_time=p.get('planned_time'),task__date=day,
-            task__exploitation=farm,task__assigned_to_id=p['assigned_to']).exclude(task__status='CANCELLED').select_related('task').first()
+            task__exploitation=farm,task__assigned_to_id=p.get('assigned_to'),responsible=responsible).exclude(task__status='CANCELLED').select_related('task').first()
         if existing:tasks.append(existing.task);continue
         serializer=AgendaSerializer(data={'title':f'Vaccination — {product.name} — {lot.nom}'[:255],'date':day,
-            'assigned_to':p['assigned_to'],'description':p.get('observations','')},context={'request':request,'health_planning':True})
+            'assigned_to':p.get('assigned_to'),'description':p.get('observations','')},context={'request':request,'health_planning':True})
         serializer.is_valid(raise_exception=True)
         task=serializer.save(exploitation=farm,created_by=actor)
-        checked(HealthTask.objects.create,task=task,product=product,lot=lot,planned_time=p.get('planned_time'),
+        checked(HealthTask.objects.create,task=task,product=product,lot=lot,responsible=responsible,planned_time=p.get('planned_time'),
             original_date=day,original_time=p.get('planned_time'),series_uuid=identifier,
             interval_days=p.get('interval_days'),series_end=p.get('end_date'))
         tasks.append(task)
@@ -99,7 +113,7 @@ def plan(request,body):
 def move(request,task,body):
     actor=request.user;farm=Exploitation.objects.select_for_update().get(pk=actor.exploitation_id)
     authorize(actor,farm,'agenda.plan',task);authorize(actor,farm,'agenda.read',task)
-    if set(body)-{'operation_uuid','date','planned_time','assigned_to','observations','reason','expected_version'}:raise ValidationError('HEALTH_MOVE_FIELDS_INVALID')
+    if set(body)-{'operation_uuid','date','planned_time','assigned_to','responsible_id','observations','reason','expected_version'}:raise ValidationError('HEALTH_MOVE_FIELDS_INVALID')
     payload={**body,'task_id':task.pk};identifier,digest,prior=command(actor,payload,'MOVE')
     if prior:return Task.objects.get(pk=task.pk,exploitation=farm)
     task=Task.objects.select_for_update().get(pk=task.pk,exploitation=farm)
@@ -109,7 +123,18 @@ def move(request,task,body):
     ensure_open(meta.lot)
     if not isinstance(body.get('reason'),str) or not 3<=len(body['reason'].strip())<=2000:raise ValidationError('HEALTH_MOVE_REASON_REQUIRED')
     if 'date' not in body or 'expected_version' not in body:raise ValidationError('HEALTH_MOVE_DATE_VERSION_REQUIRED')
-    assignee=body.get('assigned_to',task.assigned_to_id);authorized_assignee(farm.pk,assignee)
+    if 'assigned_to' in body and 'responsible_id' in body:raise ValidationError('CHOOSE_AUTHORIZED_USER_OR_RESPONSIBLE')
+    responsible=meta.responsible
+    if 'responsible_id' in body:
+        value=serializers.IntegerField(min_value=1).run_validation(body['responsible_id'])
+        responsible=HealthResponsible.objects.filter(pk=value,exploitation=farm).first()
+        if responsible is None:raise ValidationError('HEALTH_RESPONSIBLE_OUTSIDE_FARM')
+        assignee=None
+    else:
+        assignee=body.get('assigned_to',task.assigned_to_id)
+        if assignee is not None:authorized_assignee(farm.pk,assignee);responsible=None
+        elif responsible is None:raise ValidationError('HEALTH_ASSIGNEE_NOT_AUTHORIZED')
+    meta.responsible=responsible
     from .task_views import AgendaSerializer
     incoming=AgendaSerializer(task,data={'date':body['date'],'assigned_to':assignee,
         'description':body.get('observations',task.description),'expected_version':body['expected_version']},partial=True,
@@ -118,7 +143,7 @@ def move(request,task,body):
     if 'planned_time' in body:
         meta.planned_time=serializers.TimeField(allow_null=True).run_validation(body['planned_time'])
         if meta.planned_time and meta.planned_time.tzinfo is not None:raise ValidationError('HEALTH_LOCAL_TIME_REQUIRED')
-        checked(meta.save)
+    checked(meta.save)
     checked(HealthCommand.objects.create,exploitation=farm,operation_uuid=identifier,author=actor,kind='MOVE',payload=payload,
         fingerprint=digest,task_ids=[task.pk])
     farm.business_revision+=1;farm.save(update_fields=['business_revision'])
@@ -132,7 +157,7 @@ def summary(task):
     actuals=list(task.vaccination_links.select_related('vaccination__created_by').order_by('pk'))
     active=next((link.vaccination for link in actuals if link.vaccination.voided_at is None and link.vaccination.animals>0),None)
     now=timezone.now()
-    return {'exploitation':task.exploitation_id,'product':str(meta.product_id),'vaccine':meta.product.name,
+    return {'assigned_name':(task.assigned_to.username if task.assigned_to_id else None),'responsible':({'id':meta.responsible_id,'name':meta.responsible.name,'profession':meta.responsible.profession} if meta.responsible_id else None),'exploitation':task.exploitation_id,'product':str(meta.product_id),'vaccine':meta.product.name,
         'lot':meta.lot_id,'lot_name':meta.lot.nom,'species':meta.lot.espece_id,'planned_time':str(meta.planned_time) if meta.planned_time else None,
         'planned_at':at.isoformat() if at else None,'timezone':str(timezone.get_default_timezone()),
         'original_date':str(meta.original_date),'original_time':str(meta.original_time) if meta.original_time else None,

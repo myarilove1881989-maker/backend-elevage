@@ -127,6 +127,10 @@ def upgrade():
             raise RuntimeError('TLS_REQUIRED')
         cursor.execute("SELECT count(*),max(name) FROM django_migrations WHERE app='core'")
         core_count, core_latest = cursor.fetchone()
+    if (core_count, core_latest) in {(49, '0049_health_fact_history'), (50, '0050_health_responsibles')}:
+        from .health_responsible_upgrade import upgrade_responsibles
+        upgrade_responsibles(connection)
+        return
     if (core_count, core_latest) in {(38, '0038_passwordresetlimit'), (49, '0049_health_fact_history')}:
         from .stocks_upgrade import upgrade_stocks
         upgrade_stocks(connection)
