@@ -35,6 +35,31 @@ class HealthTaskActions:
         return Response([{'user':row.user_id,'name':row.user.username} for row in rows
             if {'agenda.read','agenda.progress','vaccinations.create'}<=effective_permissions(row)])
 
+    @action(detail=False,methods=['get','post'],url_path='health-responsibles')
+    def health_responsibles(self,request):
+        from .health_models import HealthResponsible
+        from rest_framework import serializers
+        authorize(request.user,request.user.exploitation_id,'agenda.plan')
+        if request.method=='GET':
+            return Response(list(HealthResponsible.objects.filter(exploitation_id=request.user.exploitation_id).order_by('name','pk').values('id','name','profession')))
+        class Input(serializers.Serializer):
+            name=serializers.CharField(max_length=150)
+            profession=serializers.ChoiceField(choices=['VETERINAIRE','OPERATEUR'])
+            operation_uuid=serializers.UUIDField()
+        incoming=Input(data=request.data);incoming.is_valid(raise_exception=True);data=incoming.validated_data
+        if set(request.data)-set(incoming.fields):raise ValidationError('UNKNOWN_RESPONSIBLE_FIELDS')
+        with transaction.atomic(),audit_scope(online_context(request)):
+            farm=Exploitation.objects.select_for_update().get(pk=request.user.exploitation_id)
+            authorize(request.user,farm,'agenda.plan')
+            prior=HealthResponsible.objects.filter(exploitation=farm,operation_uuid=data['operation_uuid']).first()
+            if prior:
+                if prior.name!=data['name'] or prior.profession!=data['profession'] or prior.created_by_id!=request.user.pk:
+                    raise ValidationError('HEALTH_RESPONSIBLE_UUID_CONFLICT')
+                row=prior
+            else:
+                row=HealthResponsible.objects.create(exploitation=farm,created_by=request.user,**data)
+            return Response({'id':row.pk,'name':row.name,'profession':row.profession},status=201)
+
     @action(detail=True,methods=['get'],url_path='health-history')
     def health_history(self,request,pk=None):
         task=self.get_object()
