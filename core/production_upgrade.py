@@ -131,7 +131,7 @@ def upgrade():
         from .health_responsible_upgrade import upgrade_responsibles
         upgrade_responsibles(connection)
         return
-    if (core_count, core_latest) == (51, '0051_remove_membershippermission_membership_action_known_and_more'):
+    if (core_count, core_latest) in {(51, '0051_remove_membershippermission_membership_action_known_and_more'), (52, '0052_remove_membershippermission_membership_action_known_and_more')}:
         from pisciculture.upgrade import upgrade
         upgrade(connection)
         return

@@ -28,8 +28,10 @@ def upgrade(connection):
     plan=executor.migration_plan(executor.loader.graph.leaf_nodes())
     if current==target and not plan:
         return
-    if current!=core_base:raise RuntimeError('AQUATIC_UNEXPECTED_SCHEMA_STATE')
-    if [(m.app_label,m.name) for m,backward in plan]!=approved or any(backward or not m.atomic for m,backward in plan):
+    phase1=core_base|set(approved[:3])
+    if current not in (core_base,phase1):raise RuntimeError('AQUATIC_UNEXPECTED_SCHEMA_STATE')
+    expected=approved if current==core_base else approved[3:]
+    if [(m.app_label,m.name) for m,backward in plan]!=expected or any(backward or not m.atomic for m,backward in plan):
         raise RuntimeError('AQUATIC_MIGRATION_PLAN_REFUSED')
     backup=os.environ.get('ELEVAGE_AQUATIC_BACKUP_SHA256','')
     if os.environ.get('ELEVAGE_ALLOW_AQUATIC_UPGRADE')!='true' or len(backup)!=64 or any(ch not in '0123456789abcdefABCDEF' for ch in backup):
@@ -42,7 +44,7 @@ def upgrade(connection):
             if cursor.fetchone()!=(True,):raise RuntimeError('UPGRADE_ALREADY_RUNNING')
             tables=sorted(connection.introspection.table_names(cursor))
             cursor.execute('LOCK TABLE '+','.join(connection.ops.quote_name(t) for t in tables)+' IN ACCESS EXCLUSIVE MODE')
-        if registry()!=core_base:raise RuntimeError('SCHEMA_CHANGED_BEFORE_LOCK')
+        if registry()!=current:raise RuntimeError('SCHEMA_CHANGED_BEFORE_LOCK')
         baseline=historical_snapshot(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
         if registry()!=target or historical_snapshot(connection,baseline)!=baseline:

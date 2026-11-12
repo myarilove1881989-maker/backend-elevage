@@ -1,7 +1,9 @@
 from django.urls import path
-from . import views
+from . import views, observation_views
 
 urlpatterns = [
+    path('weights/',observation_views.weights),path('water-readings/',observation_views.water),
+    path('observation-rules/',observation_views.rules),
     path('capabilities/',views.capabilities),path('activation/',views.activation),
     path('onboarding/',views.onboarding),
     path('installations/',views.installations),path('installations/<uuid:pk>/',views.installation),

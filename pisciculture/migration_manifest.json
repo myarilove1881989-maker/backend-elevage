@@ -1,5 +1,9 @@
 {
   "core/migrations/0051_remove_membershippermission_membership_action_known_and_more.py": "e0e7c99297bc774322cd2688428291fd347e52087e36d1994213888a74e187fb",
   "pisciculture/migrations/0001_initial.py": "074587a1230f368f5cd52c01084e943b4ee930e7a42a11ab33b3ede99832ff8c",
-  "pisciculture/migrations/0002_immutable_facts.py": "3100aa30af0197e00cb1a7d76856685dab253985a799db15e4341089d2833ce2"
+  "pisciculture/migrations/0002_immutable_facts.py": "3100aa30af0197e00cb1a7d76856685dab253985a799db15e4341089d2833ce2",
+  "core/migrations/0052_remove_membershippermission_membership_action_known_and_more.py": "ee11e8d40bdab797dfbd2260317b7312abd3feaadf12094d914b43ebb2744b66",
+  "pisciculture/migrations/0003_observation_observationrule.py": "543ea46bfd8e497852c5695e955610a7a6d8913292791b47cf2880470bccafa9",
+  "pisciculture/migrations/0004_observation_immutable.py": "bc07cff61bc853f14053113948698ca690f598e25aabafb6c75de4c5216767fb",
+  "pisciculture/migrations/0005_remove_observation_aquatic_observation_values_and_more.py": "c58c4e8bd577ea65b2c65ab3716700fa1b9862c89bf29a4f97f8ec78c66a5797"
 }

@@ -100,6 +100,7 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
         'species':'aquatic.cohorts.manage','stage':'aquatic.cohorts.manage','cohort':'aquatic.cohorts.manage',
         'cohort_patch':'aquatic.cohorts.manage','transfer':'aquatic.transfers.create'}
     actions['onboarding']='aquatic.cohorts.manage'
+    actions.update(weight='aquatic.weights.create',water='aquatic.water.create',observation_rule='aquatic.water.rules.manage')
     access(user,actions.get(kind,'aquatic.read'),activation=activation)
     farm = Exploitation.objects.select_for_update().get(pk=user.exploitation_id)
     access(user,actions.get(kind,'aquatic.read'),activation=activation)
@@ -207,6 +208,9 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
             ev=event(user,identifier,cohort,'TRANSFER',args['occurred_at'],args['reason'],[(src,-quantity),(dst,quantity)])
             result={'event_id':str(ev.uuid),'positions':[public(src),public(dst)],'cohort_version':cohort.version,
                 'cohort_count_before':total,'cohort_count_after':total,'command_status':'APPLIED'}
+        elif kind in ('weight','water','observation_rule'):
+            from .observations import create_weight, create_water, create_rule
+            result={'weight':create_weight,'water':create_water,'observation_rule':create_rule}[kind](user,args,identifier)
         else:raise ValidationError('UNKNOWN_COMMAND')
         farm.business_revision+=1;farm.save(update_fields=['business_revision'])
         result['business_revision']=farm.business_revision

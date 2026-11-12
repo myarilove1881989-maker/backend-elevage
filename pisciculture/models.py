@@ -118,6 +118,10 @@ class ImmutableFact(AuditedModel):
             raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
         if isinstance(self,CountLine) and (self.event.exploitation_id!=self.position.exploitation_id or self.event.cohort_id!=self.position.cohort_id):
             raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
+        for name in ('cohort','installation','species','stage','supersedes'):
+            if getattr(self,name+'_id',None) and hasattr(self,'exploitation_id'):
+                if getattr(self,name).exploitation_id!=self.exploitation_id:
+                    raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
         return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
@@ -164,3 +168,75 @@ class CountLine(ImmutableFact):
     class Meta:
         constraints = [models.UniqueConstraint(fields=['event','line_no'], name='aquatic_event_line'),
             models.CheckConstraint(condition=~models.Q(delta_count=0), name='aquatic_line_nonzero')]
+
+
+class Observation(ImmutableFact):
+    """Immutable technical fact; payload contains reproducible exact ratios/context."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    exploitation = models.ForeignKey('core.Exploitation', on_delete=models.PROTECT)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    operation_uuid = models.UUIDField()
+    kind = models.CharField(max_length=8, choices=[('WEIGHT','Weight'),('WATER','Water')])
+    cohort = models.ForeignKey(Cohort, null=True, blank=True, on_delete=models.PROTECT)
+    installation = models.ForeignKey(Installation, null=True, blank=True, on_delete=models.PROTECT)
+    occurred_at = models.DateTimeField()
+    recorded_at = models.DateTimeField(auto_now_add=True)
+    sample_count = models.PositiveIntegerField(null=True, blank=True)
+    mass_kg = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    direct_mean_g = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    temperature_c = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    ph = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    oxygen_mg_l = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    note = models.CharField(max_length=500, blank=True)
+    result = models.JSONField()
+
+    class Meta:
+        indexes = [models.Index(fields=['exploitation','kind','occurred_at','id'])]
+        constraints = [
+            models.CheckConstraint(name='aquatic_observation_target', condition=(
+                models.Q(kind='WATER',installation__isnull=False,cohort__isnull=True) |
+                (models.Q(kind='WEIGHT') & (
+                    models.Q(installation__isnull=False,cohort__isnull=True) |
+                    models.Q(installation__isnull=True,cohort__isnull=False))))),
+            models.CheckConstraint(name='aquatic_observation_values', condition=(
+                (models.Q(kind='WATER',sample_count__isnull=True,mass_kg__isnull=True,direct_mean_g__isnull=True) &
+                 (models.Q(temperature_c__isnull=False)|models.Q(ph__isnull=False)|models.Q(oxygen_mg_l__isnull=False))) |
+                (models.Q(kind='WEIGHT',temperature_c__isnull=True,ph__isnull=True,oxygen_mg_l__isnull=True) & (
+                    models.Q(sample_count__isnull=False,mass_kg__isnull=False,sample_count__gt=0,mass_kg__gt=0,direct_mean_g__isnull=True) |
+                    models.Q(sample_count__isnull=True,mass_kg__isnull=True,direct_mean_g__isnull=False,direct_mean_g__gt=0)))))
+        ]
+
+
+class ObservationRule(ImmutableFact):
+    """Dated, immutable rule. Overlapping intervals for the same key are refused."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    exploitation = models.ForeignKey('core.Exploitation', on_delete=models.PROTECT)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    operation_uuid = models.UUIDField()
+    supersedes = models.OneToOneField('self', null=True, blank=True, on_delete=models.PROTECT, related_name='successor')
+    parameter = models.CharField(max_length=20)
+    scope = models.CharField(max_length=16)
+    installation = models.ForeignKey(Installation, null=True, blank=True, on_delete=models.PROTECT)
+    species = models.ForeignKey('core.Espece', null=True, blank=True, on_delete=models.PROTECT)
+    stage = models.ForeignKey(Stage, null=True, blank=True, on_delete=models.PROTECT)
+    system_code = models.CharField(max_length=80, blank=True)
+    lower = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    upper = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    valid_from = models.DateTimeField()
+    valid_to = models.DateTimeField(null=True, blank=True)
+    version = models.PositiveIntegerField(default=1)
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['exploitation','parameter','scope','valid_from'])]
+        constraints = [
+            models.CheckConstraint(name='aquatic_rule_bounds',condition=(
+                (models.Q(lower__isnull=False)|models.Q(upper__isnull=False)) &
+                (models.Q(lower__isnull=True)|models.Q(upper__isnull=True)|models.Q(lower__lte=models.F('upper'))))),
+            models.CheckConstraint(name='aquatic_rule_interval',condition=(
+                models.Q(valid_to__isnull=True)|models.Q(valid_to__gt=models.F('valid_from')))),
+            models.CheckConstraint(name='aquatic_rule_scope',condition=(
+                models.Q(scope='INSTALLATION',installation__isnull=False,species__isnull=True,stage__isnull=True,system_code='') |
+                models.Q(scope='SPECIES_STAGE',installation__isnull=True,species__isnull=False,stage__isnull=False,system_code='') |
+                (models.Q(scope='SYSTEM',installation__isnull=True,species__isnull=True,stage__isnull=True) & ~models.Q(system_code=''))))
+        ]
