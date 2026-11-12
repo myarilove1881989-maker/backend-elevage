@@ -62,3 +62,10 @@ def operation_action(entity_type, operation_type):
     if operation_type != 'CREATE' or entity_type not in ENTITY_DOMAINS:
         return None
     return ENTITY_DOMAINS[entity_type] + '.create'
+
+
+# HTTP-only extension: never add aquatic types to signed legacy grants.
+AQUATIC_PERMISSIONS = frozenset({'aquatic.read', 'aquatic.installations.manage',
+    'aquatic.cohorts.manage', 'aquatic.transfers.create'})
+PERMISSIONS = PERMISSIONS | AQUATIC_PERMISSIONS
+ASSIGNABLE = ASSIGNABLE | AQUATIC_PERMISSIONS

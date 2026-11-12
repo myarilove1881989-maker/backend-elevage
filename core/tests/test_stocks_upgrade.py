@@ -24,7 +24,9 @@ class StocksUpgradeTests(TransactionTestCase):
         original_load=MigrationLoader.load_disk
         def load_historical(loader):
             original_load(loader)
-            loader.disk_migrations.pop(('core','0050_health_responsibles'),None)
+            for node in list(loader.disk_migrations):
+                if node[0]=='pisciculture' or (node[0]=='core' and node[1][:4]>='0050'):
+                    loader.disk_migrations.pop(node)
         self.historical_loader=patch.object(MigrationLoader,'load_disk',load_historical)
         self.historical_loader.start()
         self.before=historical_snapshot(connection)

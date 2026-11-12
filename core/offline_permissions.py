@@ -3,7 +3,10 @@
 Stored grants are server-issued provenance, never supplied by a submission.
 Expiry gates new local writes; delayed originals use their original recorded time.
 """
-from .permission_catalog import PERMISSIONS, OWNER_ONLY, operation_action
+from .permission_catalog import LEGACY_PERMISSIONS, OWNER_HTTP_ACTIONS, AQUATIC_PERMISSIONS, OWNER_ONLY, operation_action
+
+# The signed offline catalogue is frozen; aquatic HTTP grants are separate.
+PERMISSIONS = LEGACY_PERMISSIONS | OWNER_HTTP_ACTIONS
 
 VERSION = 2
 KEY = 'permission_contract'
@@ -19,7 +22,7 @@ def contract_for(grant, permissions):
         'user': member.user_id, 'membership_id': member.pk,
         'exploitation': member.exploitation_id, 'role': member.role,
         'device_id': grant.device_id, 'write_generation': grant.write_generation,
-        'rights_version': grant.rights_version, 'permissions': sorted(permissions),
+        'rights_version': grant.rights_version, 'permissions': sorted(set(permissions)-AQUATIC_PERMISSIONS),
         'iat': int(grant.issued_at.timestamp()), 'exp': int(grant.expires_at.timestamp())}
 
 

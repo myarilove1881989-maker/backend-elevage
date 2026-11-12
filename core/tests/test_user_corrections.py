@@ -89,6 +89,17 @@ class HealthMigrationPreservation(OperationFixture,TransactionTestCase):
         from core.health_responsible_upgrade import upgrade_responsibles
         # Synthetic database only: current fixtures have real pre-existing rows.
         call_command('migrate','core','0049_health_fact_history',verbosity=0,interactive=False)
+        # Preserve the assertions against the historical 0049 -> 0050 graph.
+        # Newer schemas have a separate exact-plan qualification.
+        from django.db.migrations.loader import MigrationLoader
+        original_load=MigrationLoader.load_disk
+        def load_historical(loader):
+            original_load(loader)
+            for node in list(loader.disk_migrations):
+                if node[0]=='pisciculture' or (node[0]=='core' and node[1][:4]>'0050'):
+                    loader.disk_migrations.pop(node)
+        historical_loader=patch.object(MigrationLoader,'load_disk',load_historical)
+        historical_loader.start()
         baseline=historical_snapshot(connection)
         try:
             with patch.dict('os.environ',{'ELEVAGE_ALLOW_HEALTH_UPGRADE':'','ELEVAGE_HEALTH_BACKUP_SHA256':''}):
@@ -100,4 +111,5 @@ class HealthMigrationPreservation(OperationFixture,TransactionTestCase):
             self.assertEqual(HealthResponsible.objects.count(),0)
             upgrade_responsibles(connection)
         finally:
-            call_command('migrate','core','0050_health_responsibles',verbosity=0,interactive=False)
+            historical_loader.stop()
+            call_command('migrate',verbosity=0,interactive=False)

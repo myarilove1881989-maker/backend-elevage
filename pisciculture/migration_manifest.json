@@ -1,0 +1,5 @@
+{
+  "core/migrations/0051_remove_membershippermission_membership_action_known_and_more.py": "e0e7c99297bc774322cd2688428291fd347e52087e36d1994213888a74e187fb",
+  "pisciculture/migrations/0001_initial.py": "074587a1230f368f5cd52c01084e943b4ee930e7a42a11ab33b3ede99832ff8c",
+  "pisciculture/migrations/0002_immutable_facts.py": "3100aa30af0197e00cb1a7d76856685dab253985a799db15e4341089d2833ce2"
+}

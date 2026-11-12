@@ -20,6 +20,11 @@ def upgrade_responsibles(connection):
     before_core={node for node in executor.loader.graph.forwards_plan(previous) if node[0]=='core'}
     after_core=before_core|{target}
     if registry()==after_core:
+        # New schema requires its own reviewed manifest and explicit gate.
+        if any(node[0]=='pisciculture' for node in executor.loader.graph.leaf_nodes()):
+            from pisciculture.upgrade import upgrade
+            upgrade(connection)
+            return
         if executor.migration_plan(executor.loader.graph.leaf_nodes()):raise RuntimeError('UNEXPECTED_PENDING_MIGRATIONS')
         print('ELEVAGE_SCHEMA_READY_0050',flush=True);return
     if registry()!=before_core:raise RuntimeError('UNEXPECTED_SCHEMA_STATE')

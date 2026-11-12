@@ -1,0 +1,3 @@
+# Migration guards validate exact reviewed bytes on every checkout platform.
+core/migrations/*.py -text
+pisciculture/migrations/*.py -text

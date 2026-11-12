@@ -72,6 +72,9 @@ def permission_contract(actor, *, version=1):
         rights = PERMISSIONS - {'agenda.progress'}
     if version == 1:
         rights = rights & LEGACY_PERMISSIONS
+    # Existing clients negotiate their unchanged closed permission contract.
+    from .permission_catalog import AQUATIC_PERMISSIONS
+    rights = rights - AQUATIC_PERMISSIONS
     return {'version': version, 'rights_version': member.version,
             'user': actor.pk, 'exploitation': member.exploitation_id, 'role': member.role,
             'permissions': sorted(rights)}

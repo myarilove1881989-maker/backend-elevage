@@ -131,6 +131,10 @@ def upgrade():
         from .health_responsible_upgrade import upgrade_responsibles
         upgrade_responsibles(connection)
         return
+    if (core_count, core_latest) == (51, '0051_remove_membershippermission_membership_action_known_and_more'):
+        from pisciculture.upgrade import upgrade
+        upgrade(connection)
+        return
     if (core_count, core_latest) in {(38, '0038_passwordresetlimit'), (49, '0049_health_fact_history')}:
         from .stocks_upgrade import upgrade_stocks
         upgrade_stocks(connection)
