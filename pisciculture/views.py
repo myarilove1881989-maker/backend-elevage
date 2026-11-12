@@ -72,7 +72,7 @@ def capabilities(request):
         'read':['aquatic.read'] if on and 'aquatic.read' in rights else [],
         'write':sorted(rights-{'aquatic.read'}) if on else [],'offline_write':[],
         'future_contracts':{'loss_reserve':'G-R','unassigned_inventory_credit_transferable':False,
-            'sensitive_corrections':'OWNER_ONLY','loss_operations':False,'inventory_operations':False}})
+            'sensitive_corrections':'OWNER_ONLY','stock_reconciliation_owner_only':True,'loss_operations':True,'inventory_operations':True}})
 
 
 @endpoint(['POST'])
@@ -180,6 +180,16 @@ def positions(request):
     at=request.query_params.get('as_of')
     if at:
         at=dated(at)
+        from .models import StockFact
+        if StockFact.objects.filter(exploitation_id=request.user.exploitation_id).exists():
+            from .stock_ledger import replay,pending_reserve
+            state=replay(request.user.exploitation_id,at)
+            def historical_position(p):
+                key=(str(p.cohort_id),str(p.installation_id));gross=state['gross'].get(key,0)
+                reserve=min(gross,pending_reserve(state,key[1],key[0]))
+                return {**public(p),'gross_count':gross,'reserved_count':reserve,'available_count':gross-reserve,
+                    'count_quality':'UNRECONCILED' if reserve else 'EXACT','as_of':at.isoformat()}
+            return page(request,qs,historical_position)
         return page(request,qs,lambda p:{**public(p),'gross_count':p.countline_set.filter(event__occurred_at__lte=at).aggregate(n=Sum('delta_count'))['n'] or 0,
             'as_of':at.isoformat(),'available_count':None})
     return page(request,qs)
@@ -223,6 +233,10 @@ def dashboard(request):
     at=timezone.now()
     if request.query_params.get('as_of'):
         at=dated(request.query_params['as_of'])
+    from .models import StockFact
+    if StockFact.objects.filter(exploitation_id=request.user.exploitation_id).exists():
+        from .stock_dashboard import dashboard as stock_dashboard
+        return stock_dashboard(request,ps,at)
     lines=CountLine.objects.filter(position__in=ps,event__occurred_at__lte=at)
     total=lines.aggregate(n=Sum('delta_count'))['n'] or 0
     farm=request.user.exploitation

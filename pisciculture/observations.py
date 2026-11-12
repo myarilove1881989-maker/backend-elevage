@@ -29,6 +29,9 @@ def metadata_at(obj,at):
     return values,sources
 
 def count_context(farm, at, *, cohort=None, installation=None):
+    from .models import StockFact
+    if StockFact.objects.filter(exploitation_id=farm).exists():
+        return stock_count_context(farm,at,cohort=cohort,installation=installation)
     positions=Position.objects.filter(exploitation_id=farm)
     if cohort:positions=positions.filter(cohort=cohort)
     if installation:positions=positions.filter(installation=installation)
@@ -152,9 +155,37 @@ def create_water(user,args,identifier):
 def serialize(obj):
     data=public(obj)
     if obj.kind=='WEIGHT':
+        from .models import StockFact
+        if StockFact.objects.filter(exploitation_id=obj.exploitation_id).exists():
+            current=stock_count_context(obj.exploitation_id,timezone.now(),cohort=obj.cohort,installation=obj.installation)
+            data['current_effectif_quality']=current['quality']
+            data['current_reference_changed']=current['gross_count']!=obj.result['count_reference']['gross_count']
         # Policy at the measure date is stable; age is computed for display only.
         policy=obj.result['freshness_policy']
         seconds=max(0,int((timezone.now()-obj.occurred_at).total_seconds()))
         data['freshness']={'age_seconds':seconds,'policy':policy,
             'status':obj.result['freshness_policy_status'] or ('STALE' if Decimal(seconds)>Decimal(policy['upper'])*86400 else 'CURRENT')}
     return data
+
+def stock_count_context(farm,at,*,cohort=None,installation=None):
+    from .stock_ledger import replay,pending_reserve
+    state=replay(farm,at)
+    positions=Position.objects.filter(exploitation_id=farm).select_related('cohort')
+    if cohort:positions=positions.filter(cohort=cohort)
+    if installation:positions=positions.filter(installation=installation)
+    rows=[];gross=0;uncertain=False;credit=False
+    for p in positions:
+        key=(str(p.cohort_id),str(p.installation_id));n=state['gross'].get(key,0)
+        relevant=[x for x in state['pending'].values() if x['installation']==key[1] and key[0] in x['eligible'] and x['remaining']]
+        uncertain |= bool(relevant)
+        credit |= any(x['installation']==key[1] and x['remaining'] for x in state['credits'].values())
+        if n<=0:continue
+        metadata,audits=metadata_at(p.cohort,at);gross+=n
+        rows.append({'position':str(p.pk),'cohort':key[0],'installation':key[1],
+            'species':metadata['species_id'],'stage':str(metadata['stage_id']) if metadata['stage_id'] else None,
+            'metadata_audits':audits,'gross_count':n,'current_reserved_count':min(n,pending_reserve(state,key[1],key[0])),
+            'source_events':[str(x) for x in CountLine.objects.filter(position=p,event__occurred_at__lte=at).values_list('event__uuid',flat=True)],
+            'source_stock_facts':[identifier for identifier,f in state['facts'].items() if str(f.installation_id)==key[1]]})
+    return {'at':at.isoformat(),'gross_count':gross,'quality':'UNRECONCILED' if uncertain else 'UNASSIGNED_CREDIT' if credit else 'EXACT',
+        'positions':rows,'source':'AQUATIC_STOCK_LEDGER','reserve_context':'HISTORICAL_LEDGER',
+        'metadata_context':'AUDIT_RECONSTRUCTION_AT_REFERENCE_TIME'}

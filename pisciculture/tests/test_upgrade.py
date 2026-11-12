@@ -81,3 +81,41 @@ class AquaticUpgradeTests(TransactionTestCase):
                 with patch.dict(os.environ,{'RENDER_SERVICE_ID':SERVICE_ID,'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'false'}):
                     startup()
             delegate.assert_called_once_with(connection)
+
+    def test_phase2a_to_phase2b_preserves_populated_aquatic_tables(self):
+        import uuid
+        from django.utils import timezone
+        targets=[('core','0052_remove_membershippermission_membership_action_known_and_more'),
+            ('pisciculture','0005_remove_observation_aquatic_observation_values_and_more')]
+        executor=MigrationExecutor(connection);executor.migrate(targets)
+        apps=executor.loader.project_state(targets).apps
+        user=User.objects.get(username='aquatic-upgrade-synthetic')
+        species=apps.get_model('core','Espece').objects.create(exploitation_id=user.exploitation_id,nom='Tilapia')
+        site=apps.get_model('pisciculture','Installation').objects.create(exploitation_id=user.exploitation_id,code='PRESERVE',name='Preserve',type='BASSIN')
+        cohort=apps.get_model('pisciculture','Cohort').objects.create(exploitation_id=user.exploitation_id,code='PRESERVE',
+            name='Preserve',species_id=species.pk,origin={'type':'OTHER'},started_at=timezone.now())
+        position=apps.get_model('pisciculture','Position').objects.create(exploitation_id=user.exploitation_id,
+            installation_id=site.pk,cohort_id=cohort.pk,gross_count=600)
+        event=apps.get_model('pisciculture','Event').objects.create(exploitation_id=user.exploitation_id,
+            cohort_id=cohort.pk,command_uuid=uuid.uuid4(),type='INITIAL',occurred_at=timezone.now(),
+            actor_id=user.pk,reason='Preserved initial')
+        apps.get_model('pisciculture','CountLine').objects.create(event_id=event.pk,position_id=position.pk,delta_count=600,line_no=0)
+        apps.get_model('pisciculture','Observation').objects.create(exploitation_id=user.exploitation_id,
+            actor_id=user.pk,operation_uuid=uuid.uuid4(),kind='WEIGHT',cohort_id=cohort.pk,
+            occurred_at=timezone.now(),sample_count=50,mass_kg='12.5',result={'snapshot':'phase2a'})
+        names=['pisciculture_cohort','pisciculture_position','pisciculture_event','pisciculture_countline','pisciculture_observation']
+        def aquatic_rows():
+            with connection.cursor() as cursor:
+                result={}
+                for table in names:
+                    cursor.execute('SELECT * FROM '+table+' ORDER BY id');result[table]=cursor.fetchall()
+                return result
+        before=aquatic_rows()
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'','ELEVAGE_AQUATIC_BACKUP_SHA256':''}):
+            with self.assertRaisesRegex(RuntimeError,'BACKUP_REQUIRED'):upgrade(connection)
+        self.assertNotIn('pisciculture_stockfact',connection.introspection.table_names())
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'true','ELEVAGE_AQUATIC_BACKUP_SHA256':'a'*64}):
+            upgrade(connection)
+        self.assertEqual(aquatic_rows(),before)
+        self.assertIn('pisciculture_stockfact',connection.introspection.table_names())
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'false'}):upgrade(connection)

@@ -100,8 +100,11 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
         'species':'aquatic.cohorts.manage','stage':'aquatic.cohorts.manage','cohort':'aquatic.cohorts.manage',
         'cohort_patch':'aquatic.cohorts.manage','transfer':'aquatic.transfers.create'}
     actions['onboarding']='aquatic.cohorts.manage'
+    actions.update(mortality='aquatic.losses.create',reconcile='aquatic.read',inventory='aquatic.read',assign_credit='aquatic.read',stock_cancel='aquatic.read')
     actions.update(weight='aquatic.weights.create',water='aquatic.water.create',observation_rule='aquatic.water.rules.manage')
     access(user,actions.get(kind,'aquatic.read'),activation=activation)
+    if kind in ('reconcile','inventory','assign_credit','stock_cancel'):
+        if active_membership(user).role!='OWNER':raise PermissionDenied('OWNER_REQUIRED')
     farm = Exploitation.objects.select_for_update().get(pk=user.exploitation_id)
     access(user,actions.get(kind,'aquatic.read'),activation=activation)
     identifier = data['operation_uuid']
@@ -146,6 +149,10 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
         elif kind=='installation_patch':
             obj=get(Installation,farm.pk,pk);metadata_version(obj,match)
             if 'id' in args:raise ValidationError('IDENTITY_IMMUTABLE')
+            if args.get('status')=='INACTIVE':
+                from .stock_ledger import replay,counts
+                inventory=counts(replay(farm.pk),str(obj.pk))
+                if inventory['pending_count'] or inventory['unassigned_credit']:fail('INSTALLATION_UNRECONCILED')
             if args.get('status')=='INACTIVE' and obj.positions.filter(gross_count__gt=0).exists():
                 fail('INSTALLATION_OCCUPIED')
             for key,value in args.items():setattr(obj,key,value)
@@ -175,10 +182,16 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
                 position=Position.objects.create(exploitation=farm,cohort=cohort,installation=installation,gross_count=a['count'])
                 lines.append((position,a['count']))
             ev=event(user,identifier,cohort,'INITIAL',cohort.started_at,reason,lines)
+            from .models import StockFact
+            if StockFact.objects.filter(exploitation=farm).exists():
+                from .stock_ledger import sync
+                sync(farm.pk)
             result={**public(cohort),'event_id':str(ev.uuid),'initial_count':initial}
         elif kind=='cohort_patch':
             cohort=get(Cohort,farm.pk,pk);metadata_version(cohort,match)
-            if args.get('status')=='CLOSED' and cohort.positions.filter(gross_count__gt=0).exists():fail('COHORT_OCCUPIED_OR_UNRECONCILED')
+            if args.get('status')=='CLOSED':
+                from .stock_ledger import cohort_has_pending
+                if cohort.positions.filter(gross_count__gt=0).exists() or cohort_has_pending(farm.pk,cohort.pk):fail('COHORT_OCCUPIED_OR_UNRECONCILED')
             if 'stage' in args and args['stage']:
                 stage=get(Stage,farm.pk,args['stage'])
                 if stage.species_id!=cohort.species_id:raise ValidationError('STAGE_SPECIES_MISMATCH')
@@ -200,14 +213,24 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
             if quantity>src.gross_count:fail('INSUFFICIENT_STOCK')
             if quantity>src.gross_count-src.reserved_count:fail('UNRECONCILED_RESERVE')
             if not dst:dst=Position.objects.create(exploitation=farm,cohort=cohort,installation=target)
-            check_timeline(cohort,args['occurred_at'],[(src,-quantity),(dst,quantity)])
+            # Full replay below includes outstanding losses, credits and all later prefixes.
+            from .models import StockFact
+            if not StockFact.objects.filter(exploitation=farm).exists():
+                check_timeline(cohort,args['occurred_at'],[(src,-quantity),(dst,quantity)])
             total=cohort.positions.aggregate(n=Sum('gross_count'))['n'] or 0
             src.gross_count-=quantity;dst.gross_count+=quantity
             for p in [src,dst]:p.version+=1;p.save()
             cohort.version+=1;cohort.save()
             ev=event(user,identifier,cohort,'TRANSFER',args['occurred_at'],args['reason'],[(src,-quantity),(dst,quantity)])
+            if StockFact.objects.filter(exploitation=farm).exists():
+                from .stock_ledger import sync
+                sync(farm.pk)
+                src.refresh_from_db();dst.refresh_from_db();cohort.refresh_from_db()
             result={'event_id':str(ev.uuid),'positions':[public(src),public(dst)],'cohort_version':cohort.version,
                 'cohort_count_before':total,'cohort_count_after':total,'command_status':'APPLIED'}
+        elif kind in ('mortality','reconcile','inventory','assign_credit','stock_cancel'):
+            from .stock_ledger import apply
+            result=apply(user,kind,args,identifier,farm)
         elif kind in ('weight','water','observation_rule'):
             from .observations import create_weight, create_water, create_rule
             result={'weight':create_weight,'water':create_water,'observation_rule':create_rule}[kind](user,args,identifier)

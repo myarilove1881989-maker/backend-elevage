@@ -118,7 +118,7 @@ class ImmutableFact(AuditedModel):
             raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
         if isinstance(self,CountLine) and (self.event.exploitation_id!=self.position.exploitation_id or self.event.cohort_id!=self.position.cohort_id):
             raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
-        for name in ('cohort','installation','species','stage','supersedes'):
+        for name in ('cohort','installation','species','stage','supersedes','parent','reverses'):
             if getattr(self,name+'_id',None) and hasattr(self,'exploitation_id'):
                 if getattr(self,name).exploitation_id!=self.exploitation_id:
                     raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
@@ -239,4 +239,32 @@ class ObservationRule(ImmutableFact):
                 models.Q(scope='INSTALLATION',installation__isnull=False,species__isnull=True,stage__isnull=True,system_code='') |
                 models.Q(scope='SPECIES_STAGE',installation__isnull=True,species__isnull=False,stage__isnull=False,system_code='') |
                 (models.Q(scope='SYSTEM',installation__isnull=True,species__isnull=True,stage__isnull=True) & ~models.Q(system_code=''))))
+        ]
+
+
+class StockFact(ImmutableFact):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    exploitation = models.ForeignKey('core.Exploitation', on_delete=models.PROTECT)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    operation_uuid = models.UUIDField()
+    installation = models.ForeignKey(Installation, on_delete=models.PROTECT)
+    cohort = models.ForeignKey(Cohort, null=True, blank=True, on_delete=models.PROTECT)
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='children')
+    reverses = models.OneToOneField('self', null=True, blank=True, on_delete=models.PROTECT, related_name='compensation')
+    kind = models.CharField(max_length=20, choices=[(x,x) for x in
+        ('MORTALITY','SUSPICION','RECONCILE','INVENTORY','ASSIGN_CREDIT','CANCEL')])
+    quantity = models.PositiveBigIntegerField()
+    occurred_at = models.DateTimeField()
+    recorded_at = models.DateTimeField(auto_now_add=True)
+    reason = models.CharField(max_length=500)
+    note = models.CharField(max_length=1000, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['exploitation','occurred_at','recorded_at','id'])]
+        constraints = [
+            models.CheckConstraint(name='aquatic_stock_fact_kind',
+                condition=models.Q(kind__in=['MORTALITY','SUSPICION','RECONCILE','INVENTORY','ASSIGN_CREDIT','CANCEL'])),
+            models.CheckConstraint(name='aquatic_stock_fact_quantity',
+                condition=models.Q(quantity__gt=0)|models.Q(kind='INVENTORY',quantity=0)),
         ]
