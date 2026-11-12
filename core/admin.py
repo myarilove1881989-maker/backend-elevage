@@ -284,7 +284,7 @@ class DepenseAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
 
     @admin.display(description="Exploitation")
     def exploitation_display(self, obj):
-        return obj.lot.exploitation
+        return obj.accounting_exploitation
 
 
 @admin.register(Achat)

@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
-from django.db.models import Count, Sum
+from django.db.models import Count, Sum, Q
 from django.shortcuts import render
 
 from .models import Achat, Client, Depense, Espece, Exploitation, Lettrage, Lot, Mouvement, Payment, Task, Vente
@@ -28,7 +28,7 @@ def superadmin_dashboard(request):
     for farm in exploitations:
         sales = Vente.objects.filter(lot__exploitation=farm).aggregate(total=Sum("montant_total"))["total"] or 0
         payments = Payment.objects.filter(exploitation=farm).aggregate(total=Sum("montant"))["total"] or 0
-        expenses = Depense.objects.filter(lot__exploitation=farm).aggregate(total=Sum("montant"))["total"] or 0
+        expenses = Depense.objects.filter(Q(lot__exploitation=farm)|Q(shared_exploitation=farm)).aggregate(total=Sum("montant"))["total"] or 0
         farm.sales_total = sales
         farm.payments_total = payments
         farm.balance_total = float(sales) - float(payments)

@@ -111,7 +111,7 @@ class SupplyReceipt(SupplyFact):
 
     def clean(self):
         farm = self.operation.exploitation_id
-        if self.product.exploitation_id != farm or (self.expense_id and self.expense.lot.exploitation_id != farm):
+        if self.product.exploitation_id != farm or (self.expense_id and self.expense.accounting_exploitation_id != farm):
             raise ValidationError('SUPPLY_OUTSIDE_FARM')
         if self.product.kind == 'VACCINE':
             if not self.expires_on or not self.manufacturer_batch.strip() or not self.vial_count or not self.doses_per_vial:
@@ -150,7 +150,7 @@ class SupplyMovement(SupplyFact):
     operation = models.ForeignKey(SupplyOperation, on_delete=models.PROTECT, related_name='movements')
     line = models.PositiveIntegerField()
     product = models.ForeignKey(SupplyProduct, on_delete=models.PROTECT)
-    species = models.ForeignKey('core.Espece', on_delete=models.PROTECT)
+    species = models.ForeignKey('core.Espece', on_delete=models.PROTECT, null=True, blank=True)
     lot = models.ForeignKey('core.Lot', null=True, blank=True, on_delete=models.PROTECT)
     destination_lot = models.ForeignKey('core.Lot', null=True, blank=True, on_delete=models.PROTECT,
                                         related_name='received_supply_movements')
@@ -162,6 +162,8 @@ class SupplyMovement(SupplyFact):
     class Meta(SupplyFact.Meta):
         constraints = [
             models.UniqueConstraint(fields=['operation', 'line'], name='supply_movement_once'),
+            models.CheckConstraint(name='supply_common_pool_shape',condition=models.Q(species__isnull=False) |
+                models.Q(species__isnull=True,lot__isnull=True,destination_lot__isnull=True,vial__isnull=True)),
             models.CheckConstraint(condition=~Q(quantity=0), name='supply_movement_nonzero'),
             models.CheckConstraint(condition=Q(kind__in=['ENTRY','DISTRIBUTION','TRANSFER','LOSS','CORRECTION','ADMINISTRATION','REVERSAL']), name='supply_movement_kind'),
             models.CheckConstraint(condition=Q(kind__in=['TRANSFER','CORRECTION','REVERSAL']) | Q(kind='ENTRY',quantity__gt=0) | Q(kind__in=['DISTRIBUTION','LOSS','ADMINISTRATION'],quantity__lt=0), name='supply_movement_sign'),
@@ -170,7 +172,9 @@ class SupplyMovement(SupplyFact):
 
     def clean(self):
         farm = self.operation.exploitation_id
-        if self.product.exploitation_id != farm or self.species.exploitation_id != farm:
+        if self.species_id is None and (self.product.kind!='FEED' or self.lot_id or self.destination_lot_id or self.vial_id):
+            raise ValidationError('SUPPLY_COMMON_FEED_ONLY')
+        if self.product.exploitation_id != farm or (self.species_id is not None and self.species.exploitation_id != farm):
             raise ValidationError('SUPPLY_OUTSIDE_FARM')
         if self.lot_id and (self.lot.exploitation_id != farm or self.lot.espece_id != self.species_id):
             raise ValidationError('SUPPLY_LOT_SPECIES_MISMATCH')

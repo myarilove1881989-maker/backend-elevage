@@ -268,3 +268,55 @@ class StockFact(ImmutableFact):
             models.CheckConstraint(name='aquatic_stock_fact_quantity',
                 condition=models.Q(quantity__gt=0)|models.Q(kind='INVENTORY',quantity=0)),
         ]
+
+
+class FeedPurchase(ImmutableFact):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    exploitation = models.ForeignKey('core.Exploitation', on_delete=models.PROTECT)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    command_uuid = models.UUIDField()
+    receipt = models.OneToOneField('core.SupplyReceipt', on_delete=models.PROTECT)
+    occurred_at = models.DateTimeField()
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        if self.receipt.operation.exploitation_id!=self.exploitation_id or self.receipt.product.kind!='FEED':
+            raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
+        if not self.receipt.expense_id or self.receipt.expense.shared_exploitation_id!=self.exploitation_id:
+            raise ValidationError('SHARED_FEED_EXPENSE_REQUIRED')
+
+
+class FeedDistribution(ImmutableFact):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    exploitation = models.ForeignKey('core.Exploitation', on_delete=models.PROTECT)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    command_uuid = models.UUIDField()
+    supply_operation = models.OneToOneField('core.SupplyOperation', on_delete=models.PROTECT)
+    installation = models.ForeignKey(Installation, on_delete=models.PROTECT)
+    cohort = models.ForeignKey(Cohort, null=True, blank=True, on_delete=models.PROTECT)
+    product = models.ForeignKey('core.SupplyProduct', on_delete=models.PROTECT)
+    quantity_kg = models.DecimalField(max_digits=14,decimal_places=3)
+    leftovers_kg = models.DecimalField(max_digits=14,decimal_places=3,null=True,blank=True)
+    occurred_at = models.DateTimeField()
+    recorded_at = models.DateTimeField(auto_now_add=True)
+    note = models.CharField(max_length=500,blank=True)
+    analysis = models.JSONField()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(name='aquatic_feed_quantity_positive',condition=models.Q(quantity_kg__gt=0)),
+            models.CheckConstraint(name='aquatic_feed_leftovers_valid',condition=models.Q(leftovers_kg__isnull=True) |
+                (models.Q(leftovers_kg__gte=0)&models.Q(leftovers_kg__lte=models.F('quantity_kg')))),
+        ]
+        indexes = [models.Index(fields=['exploitation','occurred_at','id'])]
+
+    def clean(self):
+        for related in (self.supply_operation,self.installation,self.product):
+            if related.exploitation_id!=self.exploitation_id:raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
+        if self.cohort_id and self.cohort.exploitation_id!=self.exploitation_id:raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
+        if self.product.kind!='FEED':raise ValidationError('AQUATIC_FEED_REQUIRED')
+        if self.supply_operation.kind!='AQUA_FEED_DISTRIB' or self.supply_operation.movements.count()!=1:
+            raise ValidationError('AQUATIC_SINGLE_FEED_DEBIT_REQUIRED')
+        if not self.supply_operation.movements.filter(product=self.product,species__isnull=True,lot__isnull=True,
+                quantity=-self.quantity_kg,kind='DISTRIBUTION').exists():
+            raise ValidationError('AQUATIC_SINGLE_FEED_DEBIT_REQUIRED')

@@ -1298,6 +1298,8 @@ def api_delete_depense(request, pk):
     except Depense.DoesNotExist:
         return Response({"error": "Introuvable"}, status=404)
 
+    if depense.lot_id is None:
+        return Response({'error':'Introuvable'},status=404)
     if depense.lot.exploitation != request.user.exploitation:
         return Response({"error": "Accès interdit"}, status=403)
 

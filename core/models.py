@@ -275,7 +275,9 @@ class Depense(ReversibleAuditedModel):
 
     objects = ActiveBusinessManager.from_queryset(TenantQuerySet)()
 
-    lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name='depenses')
+    lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name='depenses', null=True, blank=True)
+    shared_exploitation = models.ForeignKey(Exploitation, on_delete=models.PROTECT, null=True, blank=True,
+        related_name='shared_feed_expenses')
 
     categorie = models.ForeignKey(CategorieDepense, on_delete=models.SET_NULL, null=True)
 
@@ -283,6 +285,40 @@ class Depense(ReversibleAuditedModel):
     montant = models.DecimalField(max_digits=12, decimal_places=2)
 
     note = models.CharField(max_length=255, blank=True, null=True)
+
+    class Meta:
+        constraints=ReversibleAuditedModel.Meta.constraints+[models.CheckConstraint(name='expense_legacy_or_shared_parent',
+            condition=models.Q(lot__isnull=False,shared_exploitation__isnull=True) |
+                models.Q(lot__isnull=True,shared_exploitation__isnull=False))]
+
+    @property
+    def accounting_exploitation_id(self):
+        return self.shared_exploitation_id if self.shared_exploitation_id else self.lot.exploitation_id
+
+    @property
+    def accounting_exploitation(self):
+        return self.shared_exploitation if self.shared_exploitation_id else self.lot.exploitation
+
+    def clean(self):
+        super().clean()
+        if bool(self.lot_id)==bool(self.shared_exploitation_id):
+            raise ValidationError('EXPENSE_ONE_PARENT_REQUIRED')
+        if self.shared_exploitation_id:
+            if not self.categorie_id or self.categorie.exploitation_id!=self.shared_exploitation_id:
+                raise ValidationError('EXPENSE_CATEGORY_OUTSIDE_FARM')
+            from .supply_models import SupplyCategoryBinding
+            if not SupplyCategoryBinding.objects.filter(category_id=self.categorie_id,purpose='FEED').exists():
+                raise ValidationError('SHARED_FEED_CATEGORY_REQUIRED')
+            if self.pk:
+                old=type(self).history.get(pk=self.pk)
+                if (old.lot_id,old.shared_exploitation_id)!=(self.lot_id,self.shared_exploitation_id):
+                    raise ValidationError('EXPENSE_SCOPE_IMMUTABLE')
+
+    def save(self,*args,**kwargs):
+        if self.pk and self.lot_id and type(self).history.filter(pk=self.pk,shared_exploitation__isnull=False).exists():
+            raise ValidationError('EXPENSE_SCOPE_IMMUTABLE')
+        if self.shared_exploitation_id:self.clean()
+        return super().save(*args,**kwargs)
 
     def __str__(self):
         return f"{self.categorie} - {self.montant}"

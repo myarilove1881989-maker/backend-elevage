@@ -44,8 +44,8 @@ def authorize(actor, farm, action, resource=None, *, device=None, owner_http=Fal
     if action not in PERMISSIONS:
         raise PermissionDenied('UNKNOWN_PERMISSION')
     if resource is not None:
-        resource_farm = getattr(resource, 'exploitation_id', None)
-        if resource_farm is None and hasattr(resource, 'lot'):
+        resource_farm = getattr(resource, 'exploitation_id', None) or getattr(resource,'accounting_exploitation_id',None)
+        if resource_farm is None and getattr(resource, 'lot',None) is not None:
             resource_farm = resource.lot.exploitation_id
         if resource_farm != farm_id:
             raise PermissionDenied('RESOURCE_OUTSIDE_FARM')
@@ -163,8 +163,8 @@ def authorize_business_service(actor, farm, action, resource=None):
         if context.author_id != actor.pk or context.exploitation_id != farm_id or not context.operation_id:
             raise PermissionDenied('AUTHOR_CONTEXT_INVALID')
         if resource is not None:
-            resource_farm = getattr(resource, 'exploitation_id', None)
-            if resource_farm is None and hasattr(resource, 'lot'):
+            resource_farm = getattr(resource, 'exploitation_id', None) or getattr(resource,'accounting_exploitation_id',None)
+            if resource_farm is None and getattr(resource, 'lot',None) is not None:
                 resource_farm = resource.lot.exploitation_id
             if resource_farm != farm_id:
                 raise PermissionDenied('RESOURCE_OUTSIDE_FARM')

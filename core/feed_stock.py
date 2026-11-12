@@ -136,7 +136,7 @@ def snapshot(farm_id, *, presentation=False):
     farm=Exploitation.objects.get(pk=farm_id)
     products=[]
     positions={}
-    for row in SupplyMovement.objects.filter(product__exploitation_id=farm_id,product__kind='FEED').values('product_id','species_id','lot_id').annotate(kg=Sum('quantity')).order_by('product_id','species_id','lot_id')[:20001]:
+    for row in SupplyMovement.objects.filter(product__exploitation_id=farm_id,product__kind='FEED',species__isnull=False).values('product_id','species_id','lot_id').annotate(kg=Sum('quantity')).order_by('product_id','species_id','lot_id')[:20001]:
         product_id=row.pop('product_id');row['kg']=str(row['kg']);positions.setdefault(product_id,[]).append(row)
     if sum(len(rows) for rows in positions.values())>20000:
         raise ValidationError('FEED_POSITION_LIMIT_REQUIRES_PAGINATION')

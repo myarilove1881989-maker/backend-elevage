@@ -236,7 +236,8 @@ def dashboard(request):
     from .models import StockFact
     if StockFact.objects.filter(exploitation_id=request.user.exploitation_id).exists():
         from .stock_dashboard import dashboard as stock_dashboard
-        return stock_dashboard(request,ps,at)
+        from .feed_views import decorate_dashboard
+        return decorate_dashboard(request,stock_dashboard(request,ps,at),at)
     lines=CountLine.objects.filter(position__in=ps,event__occurred_at__lte=at)
     total=lines.aggregate(n=Sum('delta_count'))['n'] or 0
     farm=request.user.exploitation
@@ -251,7 +252,7 @@ def dashboard(request):
         for r in lines.values('position__cohort__species_id','position__cohort__species__nom').annotate(count=Sum('delta_count')).order_by('position__cohort__species_id')]
     by_installation=[{'installation_id':r['position__installation_id'],'installation__name':r['position__installation__name'],'count':r['count']}
         for r in lines.values('position__installation_id','position__installation__name').annotate(count=Sum('delta_count')).order_by('position__installation_id')]
-    return Response({'contract_version':1,'business_revision':farm.business_revision,'as_of':at,
+    result=Response({'contract_version':1,'business_revision':farm.business_revision,'as_of':at,
         'scope':{'activity':'AQUATIC',**{k:v for k,v in request.query_params.items() if k in {'species','cohort','installation'}}},
         'metrics':{'live_count':{'value':total,'unit':'fish','quality':'EXACT'},
             'active_installations':{'value':installation_count.count(),'unit':'installation','quality':'EXACT'},
@@ -261,3 +262,5 @@ def dashboard(request):
         'by_species':by_species,
         'by_installation':by_installation,
         'unassigned_losses':0,'capabilities':{'weighings':False,'feed_distributions':False,'water_readings':False,'losses':False,'offline_write':False}})
+    from .feed_views import decorate_dashboard
+    return decorate_dashboard(request,result,at)

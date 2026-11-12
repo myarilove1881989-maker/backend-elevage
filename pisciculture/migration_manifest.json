@@ -8,5 +8,8 @@
   "pisciculture/migrations/0005_remove_observation_aquatic_observation_values_and_more.py": "c58c4e8bd577ea65b2c65ab3716700fa1b9862c89bf29a4f97f8ec78c66a5797",
   "core/migrations/0053_remove_membershippermission_membership_action_known_and_more.py": "0403640f6c644c1ceacdcb9cc077f58ce2100e03ed083056c638eaecd26872a1",
   "pisciculture/migrations/0006_stockfact.py": "b579b19c04efdb1043ede0b2ebd974f75a30038ad70a4cec2aaaab8b3e8fc5dc",
-  "pisciculture/migrations/0007_stockfact_immutable.py": "350c8140034c72a7f88e30cc18d00a0854d12d9dea06f81df7e9a7aa2402c0a2"
+  "pisciculture/migrations/0007_stockfact_immutable.py": "350c8140034c72a7f88e30cc18d00a0854d12d9dea06f81df7e9a7aa2402c0a2",
+  "core/migrations/0054_shared_feed_expenses_common_pool_permissions.py": "c04eaf3a7f93e92638c118d4357462f0fa3fee4cb7c298b5881c3267cfba7637",
+  "pisciculture/migrations/0008_feedpurchase_feeddistribution.py": "bc1a38aaf745bde43eb1cc58a08c038f28df839657c9ddbcb5ee1e0b13406fb3",
+  "pisciculture/migrations/0009_feed_facts_and_common_pool.py": "8cfc4989d2e1b6ef9144b58cf42737445761a71e59c300155afba10b9e642907"
 }

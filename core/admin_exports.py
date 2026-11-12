@@ -2,7 +2,7 @@ from io import BytesIO
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.http import HttpResponse
 from django.utils import timezone
 from openpyxl import Workbook
@@ -58,7 +58,7 @@ def export_all_statistics(request):
           Vente.objects.filter(lot__exploitation=farm).aggregate(v=Sum("montant_total"))["v"] or 0,
           Payment.objects.filter(exploitation=farm).aggregate(v=Sum("montant"))["v"] or 0,
           (Vente.objects.filter(lot__exploitation=farm).aggregate(v=Sum("montant_total"))["v"] or 0) - (Payment.objects.filter(exploitation=farm).aggregate(v=Sum("montant"))["v"] or 0),
-          float(Depense.objects.filter(lot__exploitation=farm).aggregate(v=Sum("montant"))["v"] or 0), date_value(farm.date_creation))
+          float(Depense.objects.filter(Q(lot__exploitation=farm)|Q(shared_exploitation=farm)).aggregate(v=Sum("montant"))["v"] or 0), date_value(farm.date_creation))
          for farm in Exploitation.objects.select_related("proprietaire").all()))
 
     add_sheet(workbook, "Utilisateurs",
@@ -101,8 +101,8 @@ def export_all_statistics(request):
          for x in Lettrage.objects.select_related("vente__lot__exploitation", "vente__client", "payment__client").all()))
 
     add_sheet(workbook, "Dépenses", ["ID", "Date", "Exploitation", "Lot", "Espèce", "Catégorie", "Montant", "Note"],
-        ((x.id, x.date, x.lot.exploitation.nom, x.lot.nom, x.lot.espece.nom, text(x.categorie), x.montant, text(x.note))
-         for x in Depense.objects.select_related("lot__exploitation", "lot__espece", "categorie").all()))
+        ((x.id, x.date, x.accounting_exploitation.nom, x.lot.nom if x.lot_id else 'Stock commun', x.lot.espece.nom if x.lot_id else '', text(x.categorie), x.montant, text(x.note))
+         for x in Depense.objects.select_related("lot__exploitation", "lot__espece", "categorie", "shared_exploitation").all()))
 
     add_sheet(workbook, "Catégories dépenses", ["ID", "Nom", "Exploitation"],
         ((x.id, x.nom, x.exploitation.nom) for x in CategorieDepense.objects.select_related("exploitation").all()))

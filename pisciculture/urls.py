@@ -1,7 +1,10 @@
 from django.urls import path
-from . import views, observation_views, stock_views
+from . import views, observation_views, stock_views, feed_views
 
 urlpatterns = [
+    path('feed-products/',feed_views.catalog),path('feed-purchases/',feed_views.purchases),
+    path('feed-distributions/',feed_views.distributions),path('feed-reserves/',feed_views.reserves),
+    path('feed-summary/',feed_views.summary),path('feed-stock-history/',feed_views.movements),
     path('mortalities/',stock_views.mortalities),path('loss-reconciliations/',stock_views.reconciliations),
     path('inventories/',stock_views.inventories),path('inventory-credits/assign/',stock_views.assign_credit),
     path('stock-cancellations/',stock_views.cancellations),path('stock-state/',stock_views.stock_state),

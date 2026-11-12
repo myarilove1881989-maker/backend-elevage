@@ -100,13 +100,19 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
         'species':'aquatic.cohorts.manage','stage':'aquatic.cohorts.manage','cohort':'aquatic.cohorts.manage',
         'cohort_patch':'aquatic.cohorts.manage','transfer':'aquatic.transfers.create'}
     actions['onboarding']='aquatic.cohorts.manage'
+    actions.update(feed_purchase='aquatic.feed.purchase',feed_distribution='aquatic.feed.distribute',feed_reserve='aquatic.read')
     actions.update(mortality='aquatic.losses.create',reconcile='aquatic.read',inventory='aquatic.read',assign_credit='aquatic.read',stock_cancel='aquatic.read')
     actions.update(weight='aquatic.weights.create',water='aquatic.water.create',observation_rule='aquatic.water.rules.manage')
     access(user,actions.get(kind,'aquatic.read'),activation=activation)
-    if kind in ('reconcile','inventory','assign_credit','stock_cancel'):
+    if kind in ('reconcile','inventory','assign_credit','stock_cancel','feed_reserve'):
         if active_membership(user).role!='OWNER':raise PermissionDenied('OWNER_REQUIRED')
     farm = Exploitation.objects.select_for_update().get(pk=user.exploitation_id)
     access(user,actions.get(kind,'aquatic.read'),activation=activation)
+    if kind=='feed_reserve' and active_membership(user).role!='OWNER':raise PermissionDenied('OWNER_REQUIRED')
+    if kind=='feed_purchase':
+        access(user,'expenses.create')
+        if ('new_product' in data or 'new_category' in data) and active_membership(user).role!='OWNER':
+            raise PermissionDenied('OWNER_REQUIRED_FOR_CATALOG')
     identifier = data['operation_uuid']
     payload = {'kind':kind,'pk':str(pk) if pk else None,'match':match,'data':data}
     digest = hashlib.sha256(json.dumps(payload,sort_keys=True,cls=DjangoJSONEncoder,separators=(',',':')).encode()).hexdigest()
@@ -231,6 +237,9 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
         elif kind in ('mortality','reconcile','inventory','assign_credit','stock_cancel'):
             from .stock_ledger import apply
             result=apply(user,kind,args,identifier,farm)
+        elif kind in ('feed_purchase','feed_distribution','feed_reserve'):
+            from .feeding import purchase,distribute,reserve
+            result={'feed_purchase':purchase,'feed_distribution':distribute,'feed_reserve':reserve}[kind](user,farm,args,identifier)
         elif kind in ('weight','water','observation_rule'):
             from .observations import create_weight, create_water, create_rule
             result={'weight':create_weight,'water':create_water,'observation_rule':create_rule}[kind](user,args,identifier)

@@ -758,7 +758,7 @@ class ConsommationAlimentSerializer(serializers.ModelSerializer):
         if prix_kg is not None and prix_kg < 0:
             raise serializers.ValidationError({"prix_kg": "Le prix ne peut pas être négatif."})
         if depense:
-            if depense.lot.exploitation_id != self.context["request"].user.exploitation_id:
+            if not depense.lot_id or depense.lot.exploitation_id != self.context["request"].user.exploitation_id:
                 raise serializers.ValidationError({"depense": "Dépense introuvable."})
             if lot and depense.lot_id != lot.id:
                 raise serializers.ValidationError({

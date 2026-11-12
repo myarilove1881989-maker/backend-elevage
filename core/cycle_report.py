@@ -61,7 +61,7 @@ def consumption_analysis(lot, start, end):
             if row.kind == 'ENTRY':
                 receipt = receipts.get(row.operation_id)
                 if (not receipt or not receipt.expense_id or receipt.expense.voided_at
-                        or receipt.quantity != row.quantity or receipt.expense.montant < 0 or receipt.expense.lot.exploitation_id != farm):
+                        or receipt.quantity != row.quantity or receipt.expense.montant < 0 or not receipt.expense.lot_id or receipt.expense.lot.exploitation_id != farm):
                     unsupported.add(row.product_id)
                 else:
                     pool[0] += row.quantity
@@ -78,7 +78,7 @@ def consumption_analysis(lot, start, end):
                         costs[row.product_id]['feed' if row.kind == 'DISTRIBUTION' else 'loss'] += cost
         elif row.kind in {'ADMINISTRATION', 'LOSS'}:
             receipt = row.vial.receipt if row.vial_id else None
-            if not receipt or not receipt.expense_id or receipt.expense.voided_at or receipt.expense.montant < 0 or receipt.expense.lot.exploitation_id != farm:
+            if not receipt or not receipt.expense_id or receipt.expense.voided_at or receipt.expense.montant < 0 or not receipt.expense.lot_id or receipt.expense.lot.exploitation_id != farm:
                 unsupported.add(row.product_id)
             elif target == lot.pk and in_period:
                 costs[row.product_id]['vaccine' if row.kind == 'ADMINISTRATION' else 'loss'] += (
