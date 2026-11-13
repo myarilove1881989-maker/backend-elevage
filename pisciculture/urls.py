@@ -1,7 +1,13 @@
 from django.urls import path
-from . import views, observation_views, stock_views, feed_views, health_views
+from . import views, observation_views, stock_views, feed_views, health_views, breeding_views
 
 urlpatterns = [
+    path('breeding-revisions/',breeding_views.revisions),
+    path('brood-groups/',breeding_views.groups),path('brood-groups/<uuid:pk>/',breeding_views.group),
+    path('brood-group-revisions/',breeding_views.group_revision),path('reproductions/',breeding_views.reproductions),
+    path('reproductions/<uuid:pk>/',breeding_views.reproduction),path('reproduction-revisions/',breeding_views.reproduction_revision),
+    path('breeding-facts/',breeding_views.facts),path('hatch-counts/',breeding_views.count),
+    path('fry-placements/',breeding_views.place),path('breeding-voids/',breeding_views.cancel),
     path('health-products/',health_views.products),path('health-observations/',health_views.observations),
     path('health-treatments/',health_views.treatments),path('health-history/',health_views.history),
     path('health-records/<uuid:pk>/',health_views.record),path('health-corrections/',health_views.corrections),

@@ -100,6 +100,7 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
         'species':'aquatic.cohorts.manage','stage':'aquatic.cohorts.manage','cohort':'aquatic.cohorts.manage',
         'cohort_patch':'aquatic.cohorts.manage','transfer':'aquatic.transfers.create'}
     actions['onboarding']='aquatic.cohorts.manage'
+    actions.update(brood_group='aquatic.breeders.manage',brood_group_patch='aquatic.read',reproduction='aquatic.reproduction.create',reproduction_patch='aquatic.read',breeding_step='aquatic.reproduction.create',hatch_count='aquatic.fry.stock',fry_placement='aquatic.fry.stock',breeding_void='aquatic.read')
     actions.update(health_observation='aquatic.health.observe',health_treatment='aquatic.health.treat',health_product='aquatic.read',health_correction='aquatic.read')
     actions.update(feed_purchase='aquatic.feed.purchase',feed_distribution='aquatic.feed.distribute',feed_reserve='aquatic.read')
     actions.update(mortality='aquatic.losses.create',reconcile='aquatic.read',inventory='aquatic.read',assign_credit='aquatic.read',stock_cancel='aquatic.read')
@@ -111,6 +112,8 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
     access(user,actions.get(kind,'aquatic.read'),activation=activation)
     if kind=='feed_reserve' and active_membership(user).role!='OWNER':raise PermissionDenied('OWNER_REQUIRED')
     if kind in ('health_product','health_correction') and active_membership(user).role!='OWNER':raise PermissionDenied('OWNER_REQUIRED')
+    if kind in ('brood_group_patch','reproduction_patch','breeding_void') and active_membership(user).role!='OWNER':raise PermissionDenied('OWNER_REQUIRED')
+    if kind=='fry_placement':access(user,'aquatic.cohorts.manage')
     if kind=='feed_purchase':
         access(user,'expenses.create')
         if ('new_product' in data or 'new_category' in data) and active_membership(user).role!='OWNER':
@@ -239,6 +242,10 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
         elif kind in ('mortality','reconcile','inventory','assign_credit','stock_cancel'):
             from .stock_ledger import apply
             result=apply(user,kind,args,identifier,farm)
+        elif kind in ('brood_group','brood_group_patch','reproduction','reproduction_patch','breeding_step','hatch_count','fry_placement','breeding_void'):
+            from .breeding_services import apply
+            result=apply(user,farm,args,identifier,kind,device)
+            farm.refresh_from_db()
         elif kind in ('health_observation','health_treatment','health_correction','health_product'):
             from .health_services import apply
             result=apply(user,farm,args,identifier,kind)

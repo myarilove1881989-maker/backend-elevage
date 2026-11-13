@@ -32,8 +32,9 @@ def upgrade(connection):
     phase2a=core_base|set(approved[:7])
     phase2b=core_base|set(approved[:10])
     phase2c=core_base|set(approved[:13])
-    if current not in (core_base,phase1,phase2a,phase2b,phase2c):raise RuntimeError('AQUATIC_UNEXPECTED_SCHEMA_STATE')
-    expected=approved if current==core_base else approved[3:] if current==phase1 else approved[7:] if current==phase2a else approved[10:] if current==phase2b else approved[13:]
+    phase3a=core_base|set(approved[:16])
+    if current not in (core_base,phase1,phase2a,phase2b,phase2c,phase3a):raise RuntimeError('AQUATIC_UNEXPECTED_SCHEMA_STATE')
+    expected=approved if current==core_base else approved[3:] if current==phase1 else approved[7:] if current==phase2a else approved[10:] if current==phase2b else approved[13:] if current==phase2c else approved[16:]
     if [(m.app_label,m.name) for m,backward in plan]!=expected or any(backward or not m.atomic for m,backward in plan):
         raise RuntimeError('AQUATIC_MIGRATION_PLAN_REFUSED')
     backup=os.environ.get('ELEVAGE_AQUATIC_BACKUP_SHA256','')

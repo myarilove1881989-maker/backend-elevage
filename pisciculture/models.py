@@ -396,3 +396,82 @@ class HealthRecord(ImmutableFact):
             if related and related.exploitation_id!=self.exploitation_id:raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
         if self.supersedes_id and (self.supersedes.kind!=self.kind or self.supersedes.root_id!=self.root_id):raise ValidationError('HEALTH_CORRECTION_KIND_MISMATCH')
         if self.supply_product_id and self.supply_product.kind!='VACCINE':raise ValidationError('SANITARY_PRODUCT_REQUIRED')
+
+
+class BroodGroup(TenantEntity):
+    name = models.CharField(max_length=120)
+    species = models.ForeignKey('core.Espece',on_delete=models.PROTECT)
+    installation = models.ForeignKey(Installation,on_delete=models.PROTECT)
+    cohort = models.ForeignKey(Cohort,null=True,blank=True,on_delete=models.PROTECT)
+    occurred_at = models.DateTimeField()
+    time_precision = models.CharField(max_length=8,default='DATETIME')
+    business_date = models.DateField(null=True,blank=True)
+    males = models.PositiveIntegerField(null=True,blank=True)
+    females = models.PositiveIntegerField(null=True,blank=True)
+    note = models.CharField(max_length=2000,blank=True)
+    status = models.CharField(max_length=8,default='ACTIVE')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
+    recorded_at = models.DateTimeField(auto_now_add=True)
+    source_snapshot = models.JSONField()
+
+    class Meta:
+        constraints=[models.CheckConstraint(name='aquatic_brood_status',condition=models.Q(status__in=['ACTIVE','INACTIVE']))]
+
+
+class Reproduction(TenantEntity):
+    group = models.ForeignKey(BroodGroup,on_delete=models.PROTECT)
+    species = models.ForeignKey('core.Espece',on_delete=models.PROTECT)
+    installation = models.ForeignKey(Installation,on_delete=models.PROTECT)
+    occurred_at = models.DateTimeField()
+    time_precision = models.CharField(max_length=8,default='DATETIME')
+    business_date = models.DateField(null=True,blank=True)
+    note = models.CharField(max_length=2000,blank=True)
+    technique = models.CharField(max_length=200,blank=True)
+    status = models.CharField(max_length=8,default='OPEN')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
+    recorded_at = models.DateTimeField(auto_now_add=True)
+    group_snapshot = models.JSONField()
+
+    class Meta:
+        constraints=[models.CheckConstraint(name='aquatic_reproduction_status',condition=models.Q(status__in=['OPEN','CLOSED']))]
+
+
+class BreedingFact(ImmutableFact):
+    id = models.UUIDField(primary_key=True,default=uuid.uuid4,editable=False)
+    exploitation = models.ForeignKey('core.Exploitation',on_delete=models.PROTECT)
+    reproduction = models.ForeignKey(Reproduction,on_delete=models.PROTECT)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
+    command_uuid = models.UUIDField()
+    kind = models.CharField(max_length=12)
+    installation = models.ForeignKey(Installation,on_delete=models.PROTECT)
+    occurred_at = models.DateTimeField()
+    recorded_at = models.DateTimeField(auto_now_add=True)
+    time_precision = models.CharField(max_length=8,default='DATETIME')
+    business_date = models.DateField(null=True,blank=True)
+    quantity = models.PositiveIntegerField(null=True,blank=True)
+    quality = models.CharField(max_length=10,default='UNKNOWN')
+    parent = models.ForeignKey('self',null=True,blank=True,on_delete=models.PROTECT,related_name='children')
+    cohort = models.OneToOneField(Cohort,null=True,blank=True,on_delete=models.PROTECT,related_name='fry_placement')
+    stock_event = models.OneToOneField(Event,null=True,blank=True,on_delete=models.PROTECT)
+    reason = models.CharField(max_length=1000,blank=True)
+    note = models.CharField(max_length=2000,blank=True)
+    payload = models.JSONField(default=dict,blank=True)
+
+    class Meta:
+        constraints=[
+            models.CheckConstraint(name='aquatic_breeding_kind',condition=models.Q(kind__in=['SPAWN','INCUBATION','HATCH','COUNT','PLACEMENT','VOID'])),
+            models.CheckConstraint(name='aquatic_breeding_quantity',condition=(models.Q(quality='UNKNOWN',quantity__isnull=True)|models.Q(quality__in=['COUNTED','ESTIMATED'],quantity__isnull=False))),
+            models.CheckConstraint(name='aquatic_breeding_links',condition=(
+                models.Q(kind__in=['SPAWN','INCUBATION','HATCH'],cohort__isnull=True,stock_event__isnull=True) |
+                models.Q(kind='COUNT',quality='COUNTED',parent__isnull=False,cohort__isnull=True,stock_event__isnull=True) |
+                models.Q(kind='PLACEMENT',quality='COUNTED',quantity__gt=0,parent__isnull=False,cohort__isnull=False,stock_event__isnull=False) |
+                models.Q(kind='VOID',quality='UNKNOWN',quantity__isnull=True,parent__isnull=False,cohort__isnull=True))),
+            models.UniqueConstraint(fields=['parent'],condition=models.Q(kind='VOID'),name='aquatic_breeding_void_once'),
+        ]
+        indexes=[models.Index(fields=['exploitation','occurred_at','id'],name='aquatic_breeding_history_idx')]
+
+    def clean(self):
+        super().clean()
+        for related in (self.reproduction,self.actor,self.installation,self.parent,self.cohort,self.stock_event):
+            if related and related.exploitation_id!=self.exploitation_id:raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
+        if self.parent_id and self.parent.reproduction_id!=self.reproduction_id:raise ValidationError('BREEDING_PARENT_OUTSIDE_REPRODUCTION')

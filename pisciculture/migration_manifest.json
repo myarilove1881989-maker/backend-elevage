@@ -14,5 +14,8 @@
   "pisciculture/migrations/0009_feed_facts_and_common_pool.py": "8cfc4989d2e1b6ef9144b58cf42737445761a71e59c300155afba10b9e642907",
   "core/migrations/0055_remove_membershippermission_membership_action_known_and_more.py": "b40d08c0091b7efc308320a5e3c53d152a14f66fc18ea024b3274c8b94564793",
   "pisciculture/migrations/0010_sanitaryproduct_healthrecord_and_more.py": "4b6473ade82f686f9da424d0ff78201ba85ebdaf01cefd4d9e661a7f2e443914",
-  "pisciculture/migrations/0011_health_record_immutable.py": "5b0a9b0f024356dfa9249b362ffd0489219a62bc6d8302ce82079684d84c44cf"
+  "pisciculture/migrations/0011_health_record_immutable.py": "5b0a9b0f024356dfa9249b362ffd0489219a62bc6d8302ce82079684d84c44cf",
+  "core/migrations/0056_remove_membershippermission_membership_action_known_and_more.py": "988afc55cb7e4bad4d71957cfcb121396f8a473321cf04c72116486a35b8185a",
+  "pisciculture/migrations/0012_broodgroup_reproduction_breedingfact_and_more.py": "eeeaf9c84c4a44dbc87968f91838402f28f2e1964c7c6812957cf6c317269fb4",
+  "pisciculture/migrations/0013_breeding_facts_immutable.py": "93bc76bec47dd7c60bf4efc1583d41cc77cd4f9cafaff72472cefb953f3ad57d"
 }

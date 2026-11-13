@@ -196,3 +196,34 @@ class AquaticUpgradeTests(TransactionTestCase):
         self.assertEqual(historical_snapshot(connection,baseline),baseline);self.assertEqual(aquatic_rows(),old)
         self.assertIn('pisciculture_healthrecord',connection.introspection.table_names())
         with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'false'}):upgrade(connection)
+
+
+    def test_phase3a_to_phase3b_preserves_health_and_existing_positions(self):
+        import uuid
+        from django.utils import timezone
+        targets=[('core','0055_remove_membershippermission_membership_action_known_and_more'),('pisciculture','0011_health_record_immutable')]
+        executor=MigrationExecutor(connection);executor.migrate(targets)
+        apps=executor.loader.project_state(targets).apps
+        user=User.objects.get(username='aquatic-upgrade-synthetic');farm=user.exploitation_id;at=timezone.now()
+        species=apps.get_model('core','Espece').objects.create(exploitation_id=farm,nom='Espèce conservée')
+        site=apps.get_model('pisciculture','Installation').objects.create(exploitation_id=farm,code='PRESERVE4',name='Bassin conservé',type='BASSIN')
+        cohort=apps.get_model('pisciculture','Cohort').objects.create(exploitation_id=farm,code='PRESERVE4',name='Cohorte conservée',species_id=species.pk,origin={'type':'OTHER'},started_at=at)
+        apps.get_model('pisciculture','Position').objects.create(exploitation_id=farm,cohort_id=cohort.pk,installation_id=site.pk,gross_count=1000)
+        fact_id=uuid.uuid4()
+        apps.get_model('pisciculture','HealthRecord').objects.create(id=fact_id,root_id=fact_id,exploitation_id=farm,actor_id=user.pk,command_uuid=uuid.uuid4(),kind='OBSERVATION',installation_id=site.pk,occurred_at=at,symptoms='Constat à préserver',eligible_cohorts=[str(cohort.pk)],species_ids=[species.pk],scope_snapshot={'synthetic':True})
+        baseline=historical_snapshot(connection)
+        names=sorted(x for x in connection.introspection.table_names() if x.startswith('pisciculture_'))
+        def aquatic_rows():
+            with connection.cursor() as cursor:
+                result={}
+                for table in names:
+                    cursor.execute('SELECT * FROM '+table+' ORDER BY id');result[table]=cursor.fetchall()
+                return result
+        old=aquatic_rows()
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'','ELEVAGE_AQUATIC_BACKUP_SHA256':''}):
+            with self.assertRaisesRegex(RuntimeError,'BACKUP_REQUIRED'):upgrade(connection)
+        self.assertNotIn('pisciculture_broodgroup',connection.introspection.table_names())
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'true','ELEVAGE_AQUATIC_BACKUP_SHA256':'a'*64}):upgrade(connection)
+        self.assertEqual(historical_snapshot(connection,baseline),baseline);self.assertEqual(aquatic_rows(),old)
+        self.assertIn('pisciculture_breedingfact',connection.introspection.table_names())
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'false'}):upgrade(connection)
