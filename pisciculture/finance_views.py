@@ -42,16 +42,17 @@ def scope(request,agenda=False):
     if start>end:raise ValidationError('PERIOD_REVERSED')
     return start,end
 
-def audit_actor(event):
-    # Audit intentionally stores an immutable numeric ID rather than a user FK.
-    user=User.objects.filter(pk=event.actor_user_id,exploitation_id=event.exploitation_id).first() if event.actor_user_id else None
-    return (user.get_full_name() or user.username) if user else 'Auteur conservé'
+def audit_names(events,farm):
+    # Audit IDs deliberately survive account deletion; current names stay tenant-scoped.
+    return {user.pk:(user.get_full_name() or user.username) for user in User.objects.filter(exploitation_id=farm,pk__in=events.values('actor_user_id'))}
 
 
 def expense_matches(d,p):
     return all(not p.get(k) or str(d.get(k))==p[k] for k in ('cohort','installation','species'))
 def expenses(farm):
-    return Depense.objects.filter(shared_exploitation_id=farm).select_related('categorie','aquatic_cost__cohort','aquatic_cost__installation')
+    from django.db.models import Prefetch
+    from core.supply_models import SupplyReceipt
+    return Depense.objects.filter(shared_exploitation_id=farm).select_related('categorie','aquatic_cost__cohort','aquatic_cost__installation').prefetch_related(Prefetch('physical_supply_receipts',queryset=SupplyReceipt.objects.order_by('pk'),to_attr='_aquatic_receipts'))
 def sale_scope(farm,p):
     qs=HarvestMovement.objects.filter(exploitation_id=farm,kind='SALE',sale__voided_at__isnull=True)
     for k in ('species','cohort','installation'):
@@ -133,8 +134,11 @@ def revenues(request):
     from django.db.models import Q
     paid_sales=Lettrage.objects.filter(payment__exploitation_id=request.user.exploitation_id,payment__date__gte=start,payment__date__lte=end).values('vente_id')
     qs=qs.filter(Q(sale__date__gte=start)|Q(sale_id__in=paid_sales)).distinct()
+    from django.db.models import Prefetch,F
+    allocations=Lettrage.objects.filter(payment__exploitation_id=request.user.exploitation_id,payment__date__lte=end,payment__client_id=F('vente__client_id')).select_related('payment')
+    qs=qs.prefetch_related(Prefetch('sale__lettrages',queryset=allocations,to_attr='_aquatic_paid_asof'))
     def encode(row):
-        s=row.sale;payments=Lettrage.objects.filter(vente=s,payment__exploitation_id=request.user.exploitation_id,payment__client_id=s.client_id,payment__date__lte=end).select_related('payment')
+        s=row.sale;payments=s._aquatic_paid_asof
         paid=sum((x.montant for x in payments),Decimal('0'))
         return {'id':str(row.pk),'sale_id':s.pk,'invoice_reference':'FAC-'+str(s.date.year)+'-'+str(s.pk).zfill(5),'date':s.date.isoformat(),'invoice_in_period':s.date>=start,'received_in_period':money(sum((x.montant for x in payments if start<=x.payment.date<=end),Decimal('0'))),'client':s.client_id,'client_name':s.client.nom,'amount':str(s.montant_total),'paid_as_of':money(paid),'balance_as_of':money(s.montant_total-paid),'payments':[{'id':x.payment_id,'amount':str(x.montant),'date':x.payment.date.isoformat()} for x in payments],'cohort_name':row.harvest.cohort.name,'installation_name':row.harvest.installation.name,'unit':s.price_unit,'quantity':str(s.priced_quantity),'occurred_at':row.occurred_at.isoformat()}
     rev=Exploitation.objects.values_list('business_revision',flat=True).get(pk=request.user.exploitation_id)
@@ -147,7 +151,8 @@ def revisions(request):
     link=get(AquaticExpenseLink,request.user.exploitation_id,request.query_params['target'])
     from django.db.models import Q
     qs=AuditEvent.objects.filter(exploitation_id=request.user.exploitation_id).filter(Q(entity_type='pisciculture.aquaticexpenselink',entity_id=str(link.pk))|Q(entity_type='core.depense',entity_id=str(link.expense_id)))
-    return page(request,qs,lambda x:{'id':x.pk,'actor':x.actor_user_id,'actor_name':audit_actor(x),'date':x.applied_at.isoformat(),'action':x.action,'reason':x.reason_text,'before':x.before_data,'after':x.after_data},'aquatic-expense-revisions',date='applied_at',recorded='received_at')
+    names=audit_names(qs,request.user.exploitation_id)
+    return page(request,qs,lambda x:{'id':x.pk,'actor':x.actor_user_id,'actor_name':names.get(x.actor_user_id,'Auteur conservé'),'date':x.applied_at.isoformat(),'action':x.action,'reason':x.reason_text,'before':x.before_data,'after':x.after_data},'aquatic-expense-revisions',date='applied_at',recorded='received_at')
 
 
 @endpoint(['GET','POST'])
@@ -180,4 +185,5 @@ def task_history(request):
     plan=get(AquaticTaskPlan,request.user.exploitation_id,request.query_params['target'])
     from django.db.models import Q
     qs=AuditEvent.objects.filter(exploitation_id=request.user.exploitation_id).filter(Q(entity_type='pisciculture.aquatictaskplan',entity_id=str(plan.pk))|Q(entity_type='core.task',entity_id=str(plan.task_id)))
-    return page(request,qs,lambda x:{'id':x.pk,'actor':x.actor_user_id,'actor_name':audit_actor(x),'date':x.applied_at.isoformat(),'action':x.action,'reason':x.reason_text,'before':x.before_data,'after':x.after_data},'aquatic-agenda-revisions',date='applied_at',recorded='received_at')
+    names=audit_names(qs,request.user.exploitation_id)
+    return page(request,qs,lambda x:{'id':x.pk,'actor':x.actor_user_id,'actor_name':names.get(x.actor_user_id,'Auteur conservé'),'date':x.applied_at.isoformat(),'action':x.action,'reason':x.reason_text,'before':x.before_data,'after':x.after_data},'aquatic-agenda-revisions',date='applied_at',recorded='received_at')

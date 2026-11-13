@@ -17,7 +17,7 @@ def targets(farm,d):
 def expense_public(row):
     try:link=row.aquatic_cost
     except AquaticExpenseLink.DoesNotExist:link=None
-    receipt=SupplyReceipt.objects.filter(expense_id=row.pk).first()
+    receipt=next(iter(row._aquatic_receipts),None) if hasattr(row,'_aquatic_receipts') else SupplyReceipt.objects.filter(expense_id=row.pk).first()
     return {'id':str(link.pk) if link else None,'expense_id':row.pk,'amount':str(row.montant),'date':row.date.isoformat(),'category':row.categorie_id,'category_name':row.categorie.nom if row.categorie_id else 'Non renseignée','note':row.note or '',
         'scope':link.scope if link else 'FARM','cohort':str(link.cohort_id) if link and link.cohort_id else None,'installation':str(link.installation_id) if link and link.installation_id else None,'species':link.species_id if link else None,
         'cohort_name':link.cohort.name if link and link.cohort_id else None,'installation_name':link.installation.name if link and link.installation_id else None,'version':link.version if link else 0,'source':'SUPPLY_RECEIPT' if receipt else 'MANUAL_EXPENSE','source_receipt':receipt.pk if receipt else None,'economic_editable':receipt is None,'unassigned':link is None,'recorded_at':link.recorded_at.isoformat() if link else None}
