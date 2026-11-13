@@ -26,7 +26,7 @@ def superadmin_dashboard(request):
     )
 
     for farm in exploitations:
-        sales = Vente.objects.filter(lot__exploitation=farm).aggregate(total=Sum("montant_total"))["total"] or 0
+        sales = Vente.objects.filter(Q(lot__exploitation=farm)|Q(shared_exploitation=farm)).aggregate(total=Sum("montant_total"))["total"] or 0
         payments = Payment.objects.filter(exploitation=farm).aggregate(total=Sum("montant"))["total"] or 0
         expenses = Depense.objects.filter(Q(lot__exploitation=farm)|Q(shared_exploitation=farm)).aggregate(total=Sum("montant"))["total"] or 0
         farm.sales_total = sales

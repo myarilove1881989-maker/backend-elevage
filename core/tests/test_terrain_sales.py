@@ -250,19 +250,27 @@ class TerrainMoneyMigrationTests(OperationFixture,TransactionTestCase):
 
     def setUp(self):
         super().setUp()
-        # This fixture grants the current catalogue; the old schema predates
-        # employee cancellation permissions and must not receive those rows.
+        # Keep only fixture grants representable by the actual historical model.
+        # This test asserts monetary migration behavior, not current permissions.
         from core.models import MembershipPermission
-        MembershipPermission.objects.filter(code__endswith='.cancel').delete()
+        executor=MigrationExecutor(connection)
+        try:historical=executor.loader.project_state(self.previous).apps.get_model('core','MembershipPermission')
+        except LookupError:known=[]  # This schema predates individual grants entirely.
+        else:known=next(c for c in historical._meta.constraints if c.name=='membership_action_known').condition.children[0][1]
+        MembershipPermission.objects.exclude(code__in=known).delete()
+        self.addCleanup(self.restore_current_schema)
         self.client=Client.objects.create(exploitation=self.farm,nom='Client migration')
         executor=MigrationExecutor(connection);executor.migrate(self.previous)
         self.old=executor.loader.project_state(self.previous).apps.get_model('core','Payment')
+
+    def restore_current_schema(self):
+        executor=MigrationExecutor(connection);executor.migrate(executor.loader.graph.leaf_nodes())
 
     def tearDown(self):
         # Failed guards must leave legacy amounts unchanged; remove only the
         # synthetic test rows before restoring the full schema for other tests.
         self.old.objects.all().delete()
-        executor=MigrationExecutor(connection);executor.migrate(executor.loader.graph.leaf_nodes('core'))
+        executor=MigrationExecutor(connection);executor.migrate(executor.loader.graph.leaf_nodes())
         super().tearDown()
 
     def legacy(self,amount):

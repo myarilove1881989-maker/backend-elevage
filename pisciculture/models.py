@@ -475,3 +475,60 @@ class BreedingFact(ImmutableFact):
         for related in (self.reproduction,self.actor,self.installation,self.parent,self.cohort,self.stock_event):
             if related and related.exploitation_id!=self.exploitation_id:raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
         if self.parent_id and self.parent.reproduction_id!=self.reproduction_id:raise ValidationError('BREEDING_PARENT_OUTSIDE_REPRODUCTION')
+
+
+class Harvest(ImmutableFact):
+    id=models.UUIDField(primary_key=True,default=uuid.uuid4,editable=False)
+    exploitation=models.ForeignKey('core.Exploitation',on_delete=models.PROTECT)
+    command_uuid=models.UUIDField(unique=True)
+    actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
+    cohort=models.ForeignKey(Cohort,on_delete=models.PROTECT)
+    installation=models.ForeignKey(Installation,on_delete=models.PROTECT)
+    species=models.ForeignKey('core.Espece',on_delete=models.PROTECT)
+    stock_event=models.OneToOneField(Event,on_delete=models.PROTECT)
+    occurred_at=models.DateTimeField()
+    recorded_at=models.DateTimeField(auto_now_add=True)
+    time_precision=models.CharField(max_length=8,default='DATETIME')
+    business_date=models.DateField(null=True,blank=True)
+    live_count=models.PositiveIntegerField()
+    mass_kg=models.DecimalField(max_digits=18,decimal_places=6,null=True,blank=True)
+    mass_quality=models.CharField(max_length=9)
+    stock_unit=models.CharField(max_length=5)
+    destination=models.CharField(max_length=6)
+    storage_place=models.CharField(max_length=200,blank=True)
+    storage_mode=models.CharField(max_length=120,blank=True)
+    conservation_note=models.CharField(max_length=500,blank=True)
+    note=models.TextField(blank=True)
+    health_review=models.JSONField()
+    class Meta:
+        constraints=[models.CheckConstraint(name='harvest_live_positive',condition=models.Q(live_count__gt=0)),models.CheckConstraint(name='harvest_mass_quality',condition=models.Q(mass_kg__isnull=True,mass_quality='UNKNOWN') | models.Q(mass_kg__isnull=False,mass_kg__gt=0,mass_quality__in=['MEASURED','ESTIMATED'])),models.CheckConstraint(name='harvest_stock_basis',condition=models.Q(stock_unit='PIECE')|models.Q(stock_unit='KG',mass_quality='MEASURED',mass_kg__gt=0)),models.CheckConstraint(name='harvest_destination',condition=models.Q(destination__in=['DIRECT','STOCK']))]
+        indexes=[models.Index(fields=['exploitation','occurred_at','id'])]
+
+
+class HarvestMovement(ImmutableFact):
+    id=models.UUIDField(primary_key=True,default=uuid.uuid4,editable=False)
+    exploitation=models.ForeignKey('core.Exploitation',on_delete=models.PROTECT)
+    command_uuid=models.UUIDField(unique=True)
+    actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
+    harvest=models.ForeignKey(Harvest,on_delete=models.PROTECT,related_name='movements')
+    kind=models.CharField(max_length=10)
+    occurred_at=models.DateTimeField()
+    recorded_at=models.DateTimeField(auto_now_add=True)
+    quantity=models.DecimalField(max_digits=18,decimal_places=6,null=True,blank=True)
+    count=models.PositiveIntegerField(null=True,blank=True)
+    mass_kg=models.DecimalField(max_digits=18,decimal_places=6,null=True,blank=True)
+    sale=models.OneToOneField('core.Vente',on_delete=models.PROTECT,null=True,blank=True,related_name='aquatic_detail')
+    parent=models.ForeignKey('self',on_delete=models.PROTECT,null=True,blank=True)
+    stock_event=models.OneToOneField(Event,on_delete=models.PROTECT,null=True,blank=True)
+    reason=models.CharField(max_length=1000,blank=True)
+    note=models.TextField(blank=True)
+    health_review=models.JSONField(default=dict,blank=True)
+    class Meta:
+        constraints=[models.CheckConstraint(name='harvest_move_kind',condition=models.Q(kind__in=['SALE','LOSS','VOID','CORRECTION'])),models.CheckConstraint(name='harvest_move_sale_pair',condition=models.Q(kind='SALE',sale__isnull=False)|(~models.Q(kind='SALE') & models.Q(sale__isnull=True))),models.CheckConstraint(name='harvest_move_quantity',condition=models.Q(kind__in=['SALE','LOSS'],quantity__gt=0,quantity__isnull=False)|models.Q(kind__in=['VOID','CORRECTION'],quantity__isnull=True)),models.UniqueConstraint(fields=['parent'],condition=models.Q(kind='VOID',parent__isnull=False),name='harvest_move_one_void')]
+    def clean(self):
+        super().clean()
+        for obj in (self.harvest,self.parent,self.sale,self.stock_event):
+            if obj and (getattr(obj,'exploitation_id',None) or getattr(obj,'accounting_exploitation_id',None))!=self.exploitation_id:raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
+        if self.parent_id and self.parent.harvest_id!=self.harvest_id:raise ValidationError('HARVEST_PARENT_MISMATCH')
+    def save(self,*args,**kwargs):
+        self.clean();return super().save(*args,**kwargs)

@@ -227,3 +227,36 @@ class AquaticUpgradeTests(TransactionTestCase):
         self.assertEqual(historical_snapshot(connection,baseline),baseline);self.assertEqual(aquatic_rows(),old)
         self.assertIn('pisciculture_breedingfact',connection.introspection.table_names())
         with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'false'}):upgrade(connection)
+
+
+    def test_phase3b_to_phase3c_preserves_breeding_and_legacy_financial_rows(self):
+        import uuid
+        from django.utils import timezone
+        target=[('core','0056_remove_membershippermission_membership_action_known_and_more'),('pisciculture','0013_breeding_facts_immutable')]
+        executor=MigrationExecutor(connection);executor.migrate(target);apps=executor.loader.project_state(target).apps
+        user=apps.get_model('core','User').objects.get(username='aquatic-upgrade-synthetic');farm=user.exploitation_id;at=timezone.now()
+        species=apps.get_model('core','Espece').objects.create(exploitation_id=farm,nom='Espèce à préserver')
+        lot=apps.get_model('core','Lot').objects.create(exploitation_id=farm,espece_id=species.pk,nom='Lot terrestre conservé',date_debut=at.date())
+        client=apps.get_model('core','Client').objects.create(exploitation_id=farm,nom='Client conservé')
+        sale=apps.get_model('core','Vente').objects.create(lot_id=lot.pk,client_id=client.pk,date=at.date(),quantite=10,prix_unitaire='2.00',montant_total='20.00')
+        payment=apps.get_model('core','Payment').objects.create(exploitation_id=farm,client_id=client.pk,date=at.date(),montant='5.00')
+        apps.get_model('core','Lettrage').objects.create(vente_id=sale.pk,payment_id=payment.pk,montant='5.00')
+        site=apps.get_model('pisciculture','Installation').objects.create(exploitation_id=farm,code='KEEP3C',name='Bassin conservé',type='BASSIN')
+        group=apps.get_model('pisciculture','BroodGroup').objects.create(exploitation_id=farm,species_id=species.pk,installation_id=site.pk,name='Géniteurs conservés',occurred_at=at,actor_id=user.pk,source_snapshot={'quality':'UNLINKED'})
+        rep=apps.get_model('pisciculture','Reproduction').objects.create(exploitation_id=farm,group_id=group.pk,species_id=species.pk,installation_id=site.pk,occurred_at=at,actor_id=user.pk,group_snapshot={'id':str(group.pk)})
+        apps.get_model('pisciculture','BreedingFact').objects.create(exploitation_id=farm,reproduction_id=rep.pk,installation_id=site.pk,kind='HATCH',occurred_at=at,actor_id=user.pk,command_uuid=uuid.uuid4(),quality='ESTIMATED',quantity=100)
+        baseline=historical_snapshot(connection)
+        names=sorted(x for x in connection.introspection.table_names() if x.startswith('pisciculture_'))
+        def aquatic_rows():
+            with connection.cursor() as cursor:
+                result={}
+                for table in names:cursor.execute('SELECT * FROM '+table+' ORDER BY id');result[table]=cursor.fetchall()
+                return result
+        old=aquatic_rows()
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'','ELEVAGE_AQUATIC_BACKUP_SHA256':''}):
+            with self.assertRaisesRegex(RuntimeError,'BACKUP_REQUIRED'):upgrade(connection)
+        self.assertNotIn('pisciculture_harvest',connection.introspection.table_names())
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'true','ELEVAGE_AQUATIC_BACKUP_SHA256':'a'*64}):upgrade(connection)
+        self.assertEqual(historical_snapshot(connection,baseline),baseline);self.assertEqual(aquatic_rows(),old)
+        self.assertIn('pisciculture_harvestmovement',connection.introspection.table_names())
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'false'}):upgrade(connection)

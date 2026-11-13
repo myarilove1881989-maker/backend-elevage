@@ -55,9 +55,9 @@ def export_all_statistics(request):
     add_sheet(workbook, "Exploitations",
         ["ID", "Nom", "Propriétaire", "Utilisateurs", "Lots", "Clients", "CA FCFA", "Paiements FCFA", "Solde clients FCFA", "Dépenses FCFA", "Création"],
         ((farm.id, farm.nom, farm.proprietaire.username, farm.users.count(), farm.lots.count(), farm.clients.count(),
-          Vente.objects.filter(lot__exploitation=farm).aggregate(v=Sum("montant_total"))["v"] or 0,
+          Vente.objects.filter(Q(lot__exploitation=farm)|Q(shared_exploitation=farm)).aggregate(v=Sum("montant_total"))["v"] or 0,
           Payment.objects.filter(exploitation=farm).aggregate(v=Sum("montant"))["v"] or 0,
-          (Vente.objects.filter(lot__exploitation=farm).aggregate(v=Sum("montant_total"))["v"] or 0) - (Payment.objects.filter(exploitation=farm).aggregate(v=Sum("montant"))["v"] or 0),
+          (Vente.objects.filter(Q(lot__exploitation=farm)|Q(shared_exploitation=farm)).aggregate(v=Sum("montant_total"))["v"] or 0) - (Payment.objects.filter(exploitation=farm).aggregate(v=Sum("montant"))["v"] or 0),
           float(Depense.objects.filter(Q(lot__exploitation=farm)|Q(shared_exploitation=farm)).aggregate(v=Sum("montant"))["v"] or 0), date_value(farm.date_creation))
          for farm in Exploitation.objects.select_related("proprietaire").all()))
 
@@ -81,8 +81,8 @@ def export_all_statistics(request):
         ((x.id, x.date, text(x.exploitation), x.lot.nom, x.lot.espece.nom, x.type_mouvement, text(x.client), x.quantite, x.prix_unitaire, x.montant_total, text(x.created_by))
          for x in Mouvement.objects.select_related("exploitation", "lot__espece", "client", "created_by").all()))
 
-    add_sheet(workbook, "Ventes", ["ID", "Date", "Exploitation", "Client", "Lot", "Espèce", "Quantité", "Prix unitaire", "Facturé", "Payé", "Reste", "Statut"],
-        ((x.id, x.date, x.lot.exploitation.nom, text(x.client), x.lot.nom, x.lot.espece.nom, x.quantite, x.prix_unitaire, x.montant_total, x.montant_paye, x.reste_a_payer, x.statut)
+    add_sheet(workbook, "Ventes", ["ID", "Date", "Exploitation", "Client", "Lot", "Espèce", "Quantité", "Prix unitaire", "Facturé", "Payé", "Reste", "Statut", "Unité de prix"],
+        ((x.id, x.date, x.accounting_exploitation.nom, text(x.client), x.lot.nom if x.lot_id else 'Récolte piscicole', x.lot.espece.nom if x.lot_id else x.aquatic_detail.harvest.species.nom, x.quantite if x.lot_id else x.priced_quantity, x.prix_unitaire, x.montant_total, x.montant_paye, x.reste_a_payer, x.statut, x.price_unit)
          for x in Vente.objects.select_related("lot__exploitation", "lot__espece", "client").all()))
 
     add_sheet(workbook, "Clients", ["ID", "Nom", "Téléphone", "Pays", "Ville", "Exploitation", "Facturé", "Payé", "Solde"],
@@ -97,7 +97,7 @@ def export_all_statistics(request):
          for x in Payment.objects.select_related("exploitation", "client").all()))
 
     add_sheet(workbook, "Lettrages", ["ID", "Date", "Exploitation", "Client", "Vente ID", "Paiement ID", "Montant affecté"],
-        ((x.id, date_value(x.created_at), x.vente.lot.exploitation.nom, text(x.vente.client or x.payment.client), x.vente_id, x.payment_id, x.montant)
+        ((x.id, date_value(x.created_at), x.vente.accounting_exploitation.nom, text(x.vente.client or x.payment.client), x.vente_id, x.payment_id, x.montant)
          for x in Lettrage.objects.select_related("vente__lot__exploitation", "vente__client", "payment__client").all()))
 
     add_sheet(workbook, "Dépenses", ["ID", "Date", "Exploitation", "Lot", "Espèce", "Catégorie", "Montant", "Note"],

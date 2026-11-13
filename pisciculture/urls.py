@@ -30,3 +30,9 @@ urlpatterns = [
     path('events/',views.events),path('dashboard/',views.dashboard),
     path('commands/<uuid:operation_uuid>/',views.command),
 ]
+
+from . import commerce_views as commerce
+urlpatterns += [path('harvests/',commerce.harvests),path('harvests/<uuid:pk>/',commerce.harvest),
+    path('harvest-sales/',commerce.sales),path('postharvest-losses/',commerce.losses),path('commerce-history/',commerce.history),
+    path('commerce-payments/',commerce.payments),path('commerce-clients/',commerce.clients),path('commerce-invoices/<int:pk>/',commerce.bill),
+    path('commerce-check/',commerce.verification),path('commerce-cancellations/',commerce.cancellations),path('commerce-corrections/',commerce.corrections)]

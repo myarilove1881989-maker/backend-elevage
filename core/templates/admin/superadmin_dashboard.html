@@ -61,7 +61,7 @@
 
 <section class="panel"><h2>Dernières ventes</h2><div class="table-wrap"><table>
 <thead><tr><th>Date</th><th>Exploitation</th><th>Client</th><th>Lot</th><th>Facturé</th><th>Payé</th><th>Reste</th><th>Statut</th></tr></thead>
-<tbody>{% for sale in recent_sales %}<tr><td>{{ sale.date|date:"d/m/Y" }}</td><td>{{ sale.lot.exploitation.nom }}</td><td>{{ sale.client|default:"-" }}</td><td>{{ sale.lot.nom }}</td><td>{{ sale.montant_total|floatformat:0 }}</td><td>{{ sale.montant_paye|floatformat:0 }}</td><td>{{ sale.reste_a_payer|floatformat:0 }}</td><td><span class="badge {% if sale.statut == 'PAYE' %}yes{% elif sale.statut == 'PARTIEL' %}warning{% else %}danger{% endif %}">{{ sale.statut }}</span></td></tr>{% empty %}<tr><td colspan="8">Aucune vente.</td></tr>{% endfor %}</tbody>
+<tbody>{% for sale in recent_sales %}<tr><td>{{ sale.date|date:"d/m/Y" }}</td><td>{{ sale.accounting_exploitation.nom }}</td><td>{{ sale.client|default:"-" }}</td><td>{{ sale.lot.nom|default:'Récolte piscicole' }}</td><td>{{ sale.montant_total|floatformat:0 }}</td><td>{{ sale.montant_paye|floatformat:0 }}</td><td>{{ sale.reste_a_payer|floatformat:0 }}</td><td><span class="badge {% if sale.statut == 'PAYE' %}yes{% elif sale.statut == 'PARTIEL' %}warning{% else %}danger{% endif %}">{{ sale.statut }}</span></td></tr>{% empty %}<tr><td colspan="8">Aucune vente.</td></tr>{% endfor %}</tbody>
 </table></div></section>
 
 <section class="panel"><h2>Derniers paiements</h2><div class="table-wrap"><table>
@@ -71,7 +71,7 @@
 
 <section class="panel"><h2>Derniers lettrages</h2><div class="table-wrap"><table>
 <thead><tr><th>Date</th><th>Client</th><th>Vente</th><th>Paiement</th><th>Montant affecté</th></tr></thead>
-<tbody>{% for allocation in recent_allocations %}<tr><td>{{ allocation.created_at|date:"d/m/Y H:i" }}</td><td>{{ allocation.vente.client|default:allocation.payment.client }}</td><td>#{{ allocation.vente_id }} — {{ allocation.vente.lot.nom }}</td><td>#{{ allocation.payment_id }}</td><td>{{ allocation.montant|floatformat:0 }} FCFA</td></tr>{% empty %}<tr><td colspan="5">Aucun lettrage.</td></tr>{% endfor %}</tbody>
+<tbody>{% for allocation in recent_allocations %}<tr><td>{{ allocation.created_at|date:"d/m/Y H:i" }}</td><td>{{ allocation.vente.client|default:allocation.payment.client }}</td><td>#{{ allocation.vente_id }} — {{ allocation.vente.lot.nom|default:'Récolte piscicole' }}</td><td>#{{ allocation.payment_id }}</td><td>{{ allocation.montant|floatformat:0 }} FCFA</td></tr>{% empty %}<tr><td colspan="5">Aucun lettrage.</td></tr>{% endfor %}</tbody>
 </table></div></section>
 
 <section class="panel"><h2>Derniers utilisateurs inscrits</h2><div class="table-wrap"><table>

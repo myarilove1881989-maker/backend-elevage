@@ -89,7 +89,7 @@ class Espece(AuditedModel):
 
 class TenantQuerySet(AuditedQuerySet):
     def for_user(self, user):
-        return self.filter(lot__exploitation=user.exploitation)
+        return self.filter(models.Q(lot__exploitation=user.exploitation)|models.Q(shared_exploitation=user.exploitation)) if self.model.__name__ in {'Vente','Depense'} else self.filter(lot__exploitation=user.exploitation)
 
 
 # ===============================
@@ -222,18 +222,43 @@ class Vente(ReversibleAuditedModel):
 
     objects = ActiveBusinessManager.from_queryset(TenantQuerySet)()
 
-    lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name='ventes')
+    lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name='ventes', null=True, blank=True)
+    shared_exploitation = models.ForeignKey(Exploitation,on_delete=models.PROTECT,null=True,blank=True,related_name='aquatic_sales')
+    priced_quantity = models.DecimalField(max_digits=18,decimal_places=6,null=True,blank=True)
+    price_unit = models.CharField(max_length=5,blank=True,default='')
     client = models.ForeignKey("Client", on_delete=models.SET_NULL, null=True, blank=True, related_name="ventes")
 
     date = models.DateField(default=now)
 
-    quantite = models.IntegerField()
+    quantite = models.IntegerField(null=True,blank=True)
     prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
 
     montant_total = models.DecimalField(max_digits=12, decimal_places=2, editable=False)
 
+    class Meta:
+        constraints = ReversibleAuditedModel.Meta.constraints + [models.CheckConstraint(name='sale_one_accounting_parent',condition=models.Q(lot__isnull=False,shared_exploitation__isnull=True,quantite__isnull=False,priced_quantity__isnull=True,price_unit='') | (models.Q(lot__isnull=True,shared_exploitation__isnull=False,priced_quantity__gt=0,priced_quantity__isnull=False,price_unit__in=['KG','PIECE'])))]
+
+    @property
+    def accounting_exploitation_id(self):return self.shared_exploitation_id or self.lot.exploitation_id
+    @property
+    def accounting_exploitation(self):return self.shared_exploitation or self.lot.exploitation
+
+    def clean(self):
+        super().clean()
+        if bool(self.lot_id)==bool(self.shared_exploitation_id):raise ValidationError('SALE_ONE_PARENT_REQUIRED')
+        if self.shared_exploitation_id:
+            if not self.client_id or self.client.exploitation_id!=self.shared_exploitation_id:raise ValidationError('SALE_CLIENT_OUTSIDE_FARM')
+            if self.price_unit not in ('KG','PIECE') or self.priced_quantity is None or self.priced_quantity<=0 or self.prix_unitaire<0:raise ValidationError('SALE_PRICE_UNIT_REQUIRED')
+            if self.price_unit=='PIECE' and self.priced_quantity!=int(self.priced_quantity):raise ValidationError('SALE_INTEGER_PIECES_REQUIRED')
+            if self.quantite is not None and self.quantite<0:raise ValidationError('SALE_COUNT_INVALID')
+
     def save(self, *args, **kwargs):
-        self.montant_total = self.quantite * self.prix_unitaire
+        if self.pk and type(self).history.filter(pk=self.pk,shared_exploitation__isnull=False).exists():raise ValidationError('AQUATIC_SALE_CORRECTION_REQUIRED')
+        if self.shared_exploitation_id:
+            from decimal import Decimal,ROUND_HALF_UP
+            self.clean()
+            self.montant_total=(self.priced_quantity*self.prix_unitaire).quantize(Decimal('0.01'),rounding=ROUND_HALF_UP)
+        else:self.montant_total = self.quantite * self.prix_unitaire
         super().save(*args, **kwargs)
 
     @property

@@ -20,7 +20,7 @@ import secrets
 
 # Django ORM
 from django.db.models import (
-    IntegerField, Sum, F, Value, CharField,
+    Q, IntegerField, Sum, F, Value, CharField,
     Case, When, DecimalField, ExpressionWrapper, prefetch_related_objects, OuterRef, Subquery
 )
 from django.db.models.functions import Coalesce
@@ -677,7 +677,7 @@ def api_delete_mouvement(request, pk):
 # CLIENT BALANCE UTILS
 # ===============================
 def client_totals(client):
-    sales = Vente.objects.filter(client=client, lot__exploitation_id=client.exploitation_id)
+    sales = Vente.objects.filter(Q(lot__exploitation_id=client.exploitation_id)|Q(shared_exploitation_id=client.exploitation_id),client=client)
     billed = sales.aggregate(total=Sum('montant_total'))['total'] or Decimal('0.00')
     paid = Payment.objects.filter(client=client, exploitation_id=client.exploitation_id).aggregate(
         total=Sum('montant'))['total'] or Decimal('0.00')
@@ -812,10 +812,10 @@ def api_create_payment(request):
     if vente_id:
 
         try:
-            vente = Vente.objects.select_for_update().get(
+            vente = Vente.objects.select_for_update(of=('self',)).get(
+                Q(lot__exploitation=request.user.exploitation)|Q(shared_exploitation=request.user.exploitation),
                 id=vente_id,
-                client=client,
-                lot__exploitation=request.user.exploitation
+                client=client
             )
         except Vente.DoesNotExist:
             return Response(
@@ -928,8 +928,7 @@ def api_client_ventes(request, client_id):
         return Response({"error": "Client introuvable"}, status=404)
 
     ventes = Vente.objects.filter(
-        client=client,
-        lot__exploitation=request.user.exploitation,
+        Q(lot__exploitation=request.user.exploitation)|Q(shared_exploitation=request.user.exploitation),client=client,
     ).select_related("lot", "lot__espece", "detail_oeufs").order_by("-date", "-id")
 
     data = []
@@ -959,12 +958,15 @@ def api_client_ventes(request, client_id):
             "montant_paye": float(total_lettre),
             "reste": reste,
             "statut": statut,
-            "produit_vendu": "OEUFS" if detail_oeufs else "ANIMAUX",
+            "produit_vendu": "POISSONS" if v.shared_exploitation_id else "OEUFS" if detail_oeufs else "ANIMAUX",
+            "price_unit": v.price_unit,
+            "invoice_reference": "FAC-"+str(v.date.year)+"-"+str(v.pk).zfill(5) if v.shared_exploitation_id else None,
+            "priced_quantity": str(v.priced_quantity) if v.priced_quantity is not None else None,
             "nombre_oeufs": detail_oeufs.nombre_oeufs if detail_oeufs else None,
             "conditionnement": detail_oeufs.conditionnement if detail_oeufs else None,
             # 🔥 AJOUT IMPORTANT
-            "lot_nom": v.lot.nom,
-            "espece": v.lot.espece.nom,
+            "lot_nom": v.lot.nom if v.lot_id else "Récolte piscicole",
+            "espece": v.lot.espece.nom if v.lot_id else v.aquatic_detail.harvest.species.nom,
             "exploitation_id": request.user.exploitation.id,
             "exploitation_nom": request.user.exploitation.nom,
         })
@@ -1426,9 +1428,7 @@ def api_total_dettes(request):
 
     exploitation = request.user.exploitation
 
-    total_ventes = Vente.objects.filter(
-        lot__exploitation=exploitation
-    ).aggregate(
+    total_ventes = Vente.objects.filter(Q(lot__exploitation=exploitation)|Q(shared_exploitation=exploitation)).aggregate(
         total=Sum("montant_total")
     )["total"] or 0
 
@@ -1455,8 +1455,7 @@ def api_dettes_clients(request):
 
     # Reverse joins do not apply Vente's active manager automatically.
     # Select through the explicitly active, tenant-scoped sales queryset.
-    sales = Vente.objects.filter(lot__exploitation=exploitation,
-                                client__exploitation=exploitation)
+    sales = Vente.objects.filter(Q(lot__exploitation=exploitation)|Q(shared_exploitation=exploitation),client__exploitation=exploitation)
     clients = Client.objects.filter(exploitation=exploitation,
                                     pk__in=sales.values('client_id')).order_by('nom', 'pk')
     billed = dict(sales.values('client_id').annotate(total=Sum('montant_total')).values_list('client_id', 'total'))

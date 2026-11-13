@@ -69,7 +69,7 @@ def replay(farm,at=None,*,before=None):
         if before and (item.occurred_at,item.recorded_at)>=before:continue
         if kind==0:
             lines=list(item.lines.all())
-            if item.type=='TRANSFER':
+            if item.type in ('TRANSFER','HARVEST'):
                 for line in lines:
                     if line.delta_count<0:
                         p=line.position;key=(str(p.cohort_id),str(p.installation_id))

@@ -99,13 +99,15 @@ def record_public(fact):
 def current(farm):
     return HealthRecord.objects.filter(exploitation_id=farm,kind='TREATMENT',successor__isnull=True).select_related('actor')
 
-def sale_check(user,site,cohort,at):
+def sale_check(user,site,cohort,at,*,origin_ids=None,population_at=None):
     """Evidence for future 3C. Never authorizes a sale or propagates a restriction blindly."""
-    state=replay(user.exploitation_id,at)
+    population_at=population_at or at
+    state=replay(user.exploitation_id,population_at)
     candidates={c for (c,i),n in state['gross'].items() if i==str(site.pk) and n>0 and (cohort is None or c==str(cohort.pk))}
+    if origin_ids is not None:candidates=set(origin_ids)
     if cohort and str(cohort.pk) not in candidates:raise ValidationError('COHORT_NOT_PRESENT_AT_CHECK_DATE')
     matches=[]
-    for record in current(user.exploitation_id).filter(occurred_at__lte=at):
+    for record in current(user.exploitation_id).filter(occurred_at__lte=population_at):
         historical=replay(user.exploitation_id,record.occurred_at)
         now_eligible=sorted(c for (c,i),n in historical['gross'].items() if i==str(record.installation_id) and n>0 and (record.cohort_id is None or c==str(record.cohort_id)))
         historical_changed=now_eligible!=sorted(record.eligible_cohorts)
@@ -116,7 +118,7 @@ def sale_check(user,site,cohort,at):
         exposed=candidates & set(record.eligible_cohorts)
         for candidate in sorted(exposed):
             events=Event.objects.filter(exploitation_id=user.exploitation_id,cohort_id=candidate,
-                type='TRANSFER',occurred_at__gte=record.occurred_at,occurred_at__lte=at).order_by('occurred_at','recorded_at','pk')
+                type='TRANSFER',occurred_at__gte=record.occurred_at,occurred_at__lte=population_at).order_by('occurred_at','recorded_at','pk')
             reachable={str(record.installation_id)};moved=False
             for event in events:
                 lines=list(CountLine.objects.filter(event=event).select_related('position'))

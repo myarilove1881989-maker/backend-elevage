@@ -2,7 +2,7 @@ import csv
 
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.http import HttpResponse
 
 from .models import (
@@ -17,10 +17,11 @@ def object_farm_id(obj):
         return obj.pk
     if getattr(obj, 'exploitation_id', None):
         return obj.exploitation_id
+    if getattr(obj,'accounting_exploitation_id',None):return obj.accounting_exploitation_id
     if getattr(obj, 'lot_id', None):
         return obj.lot.exploitation_id
     if getattr(obj, 'vente_id', None):
-        return obj.vente.lot.exploitation_id
+        return obj.vente.accounting_exploitation_id
     return None
 
 admin.site.site_header = "Administration Elev'Age"
@@ -170,7 +171,7 @@ class ExploitationAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
 
     @admin.display(description="CA (FCFA)")
     def chiffre_affaires(self, obj):
-        return Vente.objects.filter(lot__exploitation=obj).aggregate(total=Sum("montant_total"))["total"] or 0
+        return Vente.objects.filter(Q(lot__exploitation=obj)|Q(shared_exploitation=obj)).aggregate(total=Sum("montant_total"))["total"] or 0
 
     @admin.display(description="Payé (FCFA)")
     def paiements(self, obj):
@@ -231,7 +232,7 @@ class MouvementAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
 class VenteAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
     list_display = (
         "id", "client", "lot", "exploitation_display", "date", "quantite",
-        "prix_unitaire", "montant_total", "montant_paye_display",
+        "prix_unitaire", "priced_quantity", "price_unit", "montant_total", "montant_paye_display",
         "reste_a_payer_display", "statut_display",
     )
     list_filter = ("lot__exploitation", "lot__espece", "date")
@@ -243,7 +244,7 @@ class VenteAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
 
     @admin.display(description="Exploitation")
     def exploitation_display(self, obj):
-        return obj.lot.exploitation
+        return obj.accounting_exploitation
 
     @admin.display(description="Payé (FCFA)")
     def montant_paye_display(self, obj):
@@ -385,7 +386,7 @@ class LettrageAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
 
     @admin.display(description="Exploitation")
     def exploitation_display(self, obj):
-        return obj.vente.lot.exploitation
+        return obj.vente.accounting_exploitation
 
 
 from .models import AuditEvent, ExploitationMembership, DeviceRegistration, OfflineAuthorization
