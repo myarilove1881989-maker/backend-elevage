@@ -532,3 +532,38 @@ class HarvestMovement(ImmutableFact):
         if self.parent_id and self.parent.harvest_id!=self.harvest_id:raise ValidationError('HARVEST_PARENT_MISMATCH')
     def save(self,*args,**kwargs):
         self.clean();return super().save(*args,**kwargs)
+
+
+class AquaticExpenseLink(TenantEntity):
+    expense=models.OneToOneField('core.Depense',on_delete=models.PROTECT,related_name='aquatic_cost')
+    scope=models.CharField(max_length=12)
+    cohort=models.ForeignKey(Cohort,null=True,blank=True,on_delete=models.PROTECT)
+    installation=models.ForeignKey(Installation,null=True,blank=True,on_delete=models.PROTECT)
+    species=models.ForeignKey('core.Espece',null=True,blank=True,on_delete=models.PROTECT)
+    actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
+    occurred_at=models.DateTimeField(auto_now_add=True)
+    recorded_at=models.DateTimeField(auto_now_add=True)
+    class Meta:
+        constraints=[models.CheckConstraint(name='aquatic_expense_scope',condition=models.Q(scope='COHORT',cohort__isnull=False,species__isnull=False)|models.Q(scope='INSTALLATION',cohort__isnull=True,species__isnull=True,installation__isnull=False)|models.Q(scope__in=['AQUATIC','FARM'],cohort__isnull=True,species__isnull=True,installation__isnull=True))]
+    def clean(self):
+        super().clean()
+        if self.expense.accounting_exploitation_id!=self.exploitation_id or self.expense.lot_id:raise ValidationError('AQUATIC_EXPENSE_PARENT_REQUIRED')
+
+
+class AquaticTaskPlan(TenantEntity):
+    task=models.OneToOneField('core.Task',on_delete=models.PROTECT,related_name='aquatic_plan')
+    kind=models.CharField(max_length=12)
+    installation=models.ForeignKey(Installation,null=True,blank=True,on_delete=models.PROTECT)
+    cohort=models.ForeignKey(Cohort,null=True,blank=True,on_delete=models.PROTECT)
+    scheduled_at=models.DateTimeField(null=True,blank=True)
+    reminder_at=models.DateTimeField(null=True,blank=True)
+    actual_kind=models.CharField(max_length=20,blank=True)
+    actual_id=models.UUIDField(null=True,blank=True)
+    actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
+    occurred_at=models.DateTimeField(auto_now_add=True)
+    recorded_at=models.DateTimeField(auto_now_add=True)
+    class Meta:
+        constraints=[models.CheckConstraint(name='aquatic_task_kind',condition=models.Q(kind__in=['WATER','WEIGHT','FEED','OBSERVATION','TREATMENT','REPRODUCTION','HATCH_CHECK','HARVEST','OTHER'])),models.CheckConstraint(name='aquatic_task_actual_pair',condition=models.Q(actual_kind='',actual_id__isnull=True)|(~models.Q(actual_kind='')&models.Q(actual_id__isnull=False)))]
+    def clean(self):
+        super().clean()
+        if self.task.exploitation_id!=self.exploitation_id:raise ValidationError('AQUATIC_TASK_OUTSIDE_FARM')

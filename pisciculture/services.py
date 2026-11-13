@@ -100,6 +100,7 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
         'species':'aquatic.cohorts.manage','stage':'aquatic.cohorts.manage','cohort':'aquatic.cohorts.manage',
         'cohort_patch':'aquatic.cohorts.manage','transfer':'aquatic.transfers.create'}
     actions['onboarding']='aquatic.cohorts.manage'
+    actions.update(finance_expense='aquatic.finances.manage',finance_expense_edit='aquatic.finances.manage',finance_assign='aquatic.finances.manage',aquatic_task='aquatic.agenda.plan',aquatic_task_edit='aquatic.agenda.plan',aquatic_task_progress='aquatic.agenda.progress')
     actions.update(harvest='aquatic.harvest.create',harvest_sale='aquatic.sales.create',harvest_loss='aquatic.postharvest.loss',commerce_payment='cash.create',commerce_client='clients.create',commerce_void='aquatic.read',commerce_correction='aquatic.read')
     actions.update(brood_group='aquatic.breeders.manage',brood_group_patch='aquatic.read',reproduction='aquatic.reproduction.create',reproduction_patch='aquatic.read',breeding_step='aquatic.reproduction.create',hatch_count='aquatic.fry.stock',fry_placement='aquatic.fry.stock',breeding_void='aquatic.read')
     actions.update(health_observation='aquatic.health.observe',health_treatment='aquatic.health.treat',health_product='aquatic.read',health_correction='aquatic.read')
@@ -115,6 +116,10 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
     if kind in ('health_product','health_correction') and active_membership(user).role!='OWNER':raise PermissionDenied('OWNER_REQUIRED')
     if kind in ('brood_group_patch','reproduction_patch','breeding_void') and active_membership(user).role!='OWNER':raise PermissionDenied('OWNER_REQUIRED')
     if kind=='fry_placement':access(user,'aquatic.cohorts.manage')
+    if kind.startswith('finance_'):
+        access(user,'aquatic.read');access(user,'finance.read');access(user,'expenses.create')
+        if kind!='finance_expense' and active_membership(user).role!='OWNER':raise PermissionDenied('OWNER_REQUIRED')
+    if kind.startswith('aquatic_task'):access(user,'aquatic.read')
     if kind in ('commerce_void','commerce_correction') and active_membership(user).role!='OWNER':raise PermissionDenied('OWNER_REQUIRED')
     if kind.startswith('commerce_') or kind in ('harvest','harvest_sale','harvest_loss'):access(user,'aquatic.read')
     if kind in ('harvest_sale','commerce_payment'):access(user,'finance.read')
@@ -247,6 +252,9 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
         elif kind in ('mortality','reconcile','inventory','assign_credit','stock_cancel'):
             from .stock_ledger import apply
             result=apply(user,kind,args,identifier,farm)
+        elif kind in ('finance_expense','finance_expense_edit','finance_assign','aquatic_task','aquatic_task_edit','aquatic_task_progress'):
+            from .planning import apply
+            result=apply(user,farm,args,identifier,kind)
         elif kind in ('harvest','harvest_sale','harvest_loss','commerce_payment','commerce_client','commerce_void','commerce_correction'):
             from .commerce import apply
             result=apply(user,farm,args,identifier,kind)

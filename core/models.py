@@ -303,6 +303,7 @@ class Depense(ReversibleAuditedModel):
     lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name='depenses', null=True, blank=True)
     shared_exploitation = models.ForeignKey(Exploitation, on_delete=models.PROTECT, null=True, blank=True,
         related_name='shared_feed_expenses')
+    shared_purpose = models.CharField(max_length=8,default='FEED',choices=[('FEED','Feed'),('AQUATIC','Aquatic'),('FARM','Farm')])
 
     categorie = models.ForeignKey(CategorieDepense, on_delete=models.SET_NULL, null=True)
 
@@ -332,7 +333,8 @@ class Depense(ReversibleAuditedModel):
             if not self.categorie_id or self.categorie.exploitation_id!=self.shared_exploitation_id:
                 raise ValidationError('EXPENSE_CATEGORY_OUTSIDE_FARM')
             from .supply_models import SupplyCategoryBinding
-            if not SupplyCategoryBinding.objects.filter(category_id=self.categorie_id,purpose='FEED').exists():
+            if self.shared_purpose not in ('FEED','AQUATIC','FARM'):raise ValidationError('EXPENSE_PURPOSE_REQUIRED')
+            if self.shared_purpose=='FEED' and not SupplyCategoryBinding.objects.filter(category_id=self.categorie_id,purpose='FEED').exists():
                 raise ValidationError('SHARED_FEED_CATEGORY_REQUIRED')
             if self.pk:
                 old=type(self).history.get(pk=self.pk)
@@ -394,7 +396,17 @@ class Achat(ReversibleAuditedModel):
 # TASK
 # ===============================
 
+class TerrestrialTaskManager(models.Manager.from_queryset(AuditedQuerySet)):
+    def get_queryset(self):
+        # A NOT IN subquery avoids nullable joins in existing FOR UPDATE queries.
+        from pisciculture.models import AquaticTaskPlan
+        return super().get_queryset().exclude(pk__in=AquaticTaskPlan.objects.values('task_id'))
+
+
 class Task(AuditedModel):
+    objects=TerrestrialTaskManager()
+    all_tasks=AuditedQuerySet.as_manager()
+
     exploitation = models.ForeignKey(Exploitation, on_delete=models.CASCADE, related_name="tasks")
 
     title = models.CharField(max_length=255)

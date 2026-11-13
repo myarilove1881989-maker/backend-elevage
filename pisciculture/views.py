@@ -70,7 +70,7 @@ def capabilities(request):
     rights=AQUATIC_PERMISSIONS if member.role=='OWNER' else set(member.action_permissions.values_list('code',flat=True)) & AQUATIC_PERMISSIONS
     from core.access_policy import effective_permissions
     commerce_rights={'cash.create','clients.create'} if member.role=='OWNER' else effective_permissions(member)&{'cash.create','clients.create'}
-    return Response({'commerce_write':sorted(commerce_rights) if on and 'aquatic.read' in rights else [],'contract_version':1,'enabled':on,'can_enable':member.role=='OWNER',
+    return Response({'finance_write':sorted({'expenses.create'} if member.role=='OWNER' else effective_permissions(member)&{'expenses.create'}) if on and 'aquatic.read' in rights else [],'commerce_write':sorted(commerce_rights) if on and 'aquatic.read' in rights else [],'contract_version':1,'enabled':on,'can_enable':member.role=='OWNER',
         'read':['aquatic.read'] if on and 'aquatic.read' in rights else [],
         'write':sorted(rights-{'aquatic.read'}) if on else [],'offline_write':[],
         'future_contracts':{'loss_reserve':'G-R','unassigned_inventory_credit_transferable':False,

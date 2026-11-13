@@ -50,7 +50,7 @@ def superadmin_dashboard(request):
         ("Clients", Client.objects.count(), "admin:core_client_changelist"),
         ("Paiements", Payment.objects.count(), "admin:core_payment_changelist"),
         ("Lettrages", Lettrage.objects.count(), "admin:core_lettrage_changelist"),
-        ("Tâches", Task.objects.count(), "admin:core_task_changelist"),
+        ("Tâches", Task.all_tasks.count(), "admin:core_task_changelist"),
     )
 
     context = {

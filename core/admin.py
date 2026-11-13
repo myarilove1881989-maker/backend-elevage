@@ -302,6 +302,7 @@ class AchatAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
 
 @admin.register(Task)
 class TaskAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
+    def get_queryset(self,request):return Task.all_tasks.all()
     # Task mutations use the API role/version/reason checks, including cancellation.
     def has_add_permission(self, request):
         return False

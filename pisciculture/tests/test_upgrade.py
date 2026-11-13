@@ -260,3 +260,35 @@ class AquaticUpgradeTests(TransactionTestCase):
         self.assertEqual(historical_snapshot(connection,baseline),baseline);self.assertEqual(aquatic_rows(),old)
         self.assertIn('pisciculture_harvestmovement',connection.introspection.table_names())
         with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'false'}):upgrade(connection)
+
+
+    def test_phase3c_to_phase3d_preserves_shared_accounting_and_planning(self):
+        import uuid
+        from django.utils import timezone
+        target=[('core','0057_remove_membershippermission_membership_action_known_and_more'),('pisciculture','0015_harvest_facts_immutable')]
+        executor=MigrationExecutor(connection);executor.migrate(target);apps=executor.loader.project_state(target).apps
+        user=apps.get_model('core','User').objects.get(username='aquatic-upgrade-synthetic');farm=user.exploitation_id;at=timezone.now()
+        category=apps.get_model('core','CategorieDepense').objects.create(exploitation_id=farm,nom='Aliment historique')
+        apps.get_model('core','SupplyCategoryBinding').objects.create(category_id=category.pk,purpose='FEED')
+        expense=apps.get_model('core','Depense').objects.create(shared_exploitation_id=farm,categorie_id=category.pk,montant='45.50',date=at.date())
+        client=apps.get_model('core','Client').objects.create(exploitation_id=farm,nom='Client conservé 3D')
+        sale=apps.get_model('core','Vente').objects.create(shared_exploitation_id=farm,client_id=client.pk,quantite=None,priced_quantity='30.000000',price_unit='KG',prix_unitaire='2.50',montant_total='75.00',date=at.date())
+        payment=apps.get_model('core','Payment').objects.create(exploitation_id=farm,client_id=client.pk,date=at.date(),montant='20.00')
+        apps.get_model('core','Lettrage').objects.create(vente_id=sale.pk,payment_id=payment.pk,montant='20.00')
+        task=apps.get_model('core','Task').objects.create(exploitation_id=farm,title='Tâche terrestre conservée',date=at.date(),status='TODO')
+        baseline=historical_snapshot(connection)
+        names=sorted(x for x in connection.introspection.table_names() if x.startswith('pisciculture_'))
+        def aquatic_rows():
+            with connection.cursor() as cursor:
+                result={}
+                for table in names:cursor.execute('SELECT * FROM '+table+' ORDER BY id');result[table]=cursor.fetchall()
+                return result
+        old=aquatic_rows()
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'','ELEVAGE_AQUATIC_BACKUP_SHA256':''}):
+            with self.assertRaisesRegex(RuntimeError,'BACKUP_REQUIRED'):upgrade(connection)
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'true','ELEVAGE_AQUATIC_BACKUP_SHA256':'a'*64}):upgrade(connection)
+        self.assertEqual(historical_snapshot(connection,baseline),baseline);self.assertEqual(aquatic_rows(),old)
+        from core.models import Depense,Task
+        self.assertEqual(Depense.objects.get(pk=expense.pk).shared_purpose,'FEED');self.assertEqual(Task.objects.get(pk=task.pk).title,'Tâche terrestre conservée')
+        self.assertIn('pisciculture_aquatictaskplan',connection.introspection.table_names())
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'false'}):upgrade(connection)

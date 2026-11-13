@@ -108,7 +108,7 @@ def export_all_statistics(request):
         ((x.id, x.nom, x.exploitation.nom) for x in CategorieDepense.objects.select_related("exploitation").all()))
 
     add_sheet(workbook, "Tâches", ["ID", "Date", "Exploitation", "Titre", "Création"],
-        ((x.id, x.date, x.exploitation.nom, x.title, date_value(x.created_at)) for x in Task.objects.select_related("exploitation").all()))
+        ((x.id, x.date, x.exploitation.nom, x.title, date_value(x.created_at)) for x in Task.all_tasks.select_related("exploitation").all()))
 
     output = BytesIO()
     workbook.save(output)
