@@ -293,10 +293,15 @@ class SupplySchemaTests(TransactionTestCase):
         lot=Lot.objects.create(exploitation=owner.exploitation,espece=species,nom='Historique',date_debut=timezone.localdate())
         Depense.objects.create(lot=lot,montant='123.45',note='Historique intact')
         before=list(Depense.objects.values())
+        target=[('core','0038_passwordresetlimit')]
+        executor=MigrationExecutor(connection)
+        historical_expense=executor.loader.project_state(target).apps.get_model('core','Depense')
+        historical_columns=[field.attname for field in historical_expense._meta.concrete_fields]
+        historical_before=list(Depense.objects.values(*historical_columns))
         try:
-            MigrationExecutor(connection).migrate([('core','0038_passwordresetlimit')])
+            executor.migrate(target)
             self.assertNotIn('core_supplymovement',connection.introspection.table_names())
-            self.assertEqual(list(Depense.objects.values()),before)
+            self.assertEqual(list(historical_expense.objects.values()),historical_before)
         finally:
             executor = MigrationExecutor(connection)
             executor.migrate(executor.loader.graph.leaf_nodes())

@@ -156,3 +156,43 @@ class AquaticUpgradeTests(TransactionTestCase):
         self.assertEqual(Depense.objects.get(pk=expense.pk).lot_id,lot.pk)
         self.assertEqual(SupplyMovement.objects.get(operation_id=operation.pk).species_id,species.pk)
         with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'false'}):upgrade(connection)
+
+
+    def test_phase2c_to_phase3a_preserves_shared_feeding_and_populations(self):
+        import uuid
+        from django.utils import timezone
+        targets=[('core','0054_shared_feed_expenses_common_pool_permissions'),('pisciculture','0009_feed_facts_and_common_pool')]
+        executor=MigrationExecutor(connection);executor.migrate(targets)
+        apps=executor.loader.project_state(targets).apps
+        user=User.objects.get(username='aquatic-upgrade-synthetic');farm=user.exploitation_id;at=timezone.now()
+        species=apps.get_model('core','Espece').objects.create(exploitation_id=farm,nom='Preserved species')
+        product=apps.get_model('core','SupplyProduct').objects.create(exploitation_id=farm,kind='FEED',name='Preserved feed')
+        category=apps.get_model('core','CategorieDepense').objects.create(exploitation_id=farm,nom='Preserved category')
+        apps.get_model('core','SupplyCategoryBinding').objects.create(category_id=category.pk,purpose='FEED')
+        expense=apps.get_model('core','Depense').objects.create(shared_exploitation_id=farm,categorie_id=category.pk,montant='125.50')
+        op=apps.get_model('core','SupplyOperation').objects.create(exploitation_id=farm,author_id=user.pk,operation_uuid=uuid.uuid4(),kind='AQUA_FEED_PURCHASE',payload={'synthetic':True},fingerprint='a'*64,occurred_at=at)
+        receipt=apps.get_model('core','SupplyReceipt').objects.create(operation_id=op.pk,product_id=product.pk,expense_id=expense.pk,quantity='100')
+        apps.get_model('core','SupplyMovement').objects.create(operation_id=op.pk,line=0,product_id=product.pk,species_id=None,kind='ENTRY',quantity='100')
+        apps.get_model('pisciculture','FeedPurchase').objects.create(exploitation_id=farm,actor_id=user.pk,command_uuid=uuid.uuid4(),receipt_id=receipt.pk,occurred_at=at)
+        site=apps.get_model('pisciculture','Installation').objects.create(exploitation_id=farm,code='PRESERVE3',name='Preserve basin',type='BASSIN')
+        cohort=apps.get_model('pisciculture','Cohort').objects.create(exploitation_id=farm,code='PRESERVE3',name='Preserve cohort',species_id=species.pk,origin={'type':'OTHER'},started_at=at)
+        apps.get_model('pisciculture','Position').objects.create(exploitation_id=farm,installation_id=site.pk,cohort_id=cohort.pk,gross_count=1000)
+        dist=apps.get_model('core','SupplyOperation').objects.create(exploitation_id=farm,author_id=user.pk,operation_uuid=uuid.uuid4(),kind='AQUA_FEED_DISTRIB',payload={'synthetic':True},fingerprint='b'*64,occurred_at=at)
+        apps.get_model('core','SupplyMovement').objects.create(operation_id=dist.pk,line=0,product_id=product.pk,species_id=None,kind='DISTRIBUTION',quantity='-15')
+        apps.get_model('pisciculture','FeedDistribution').objects.create(exploitation_id=farm,actor_id=user.pk,command_uuid=uuid.uuid4(),supply_operation_id=dist.pk,installation_id=site.pk,product_id=product.pk,quantity_kg='15',occurred_at=at,analysis={'status':'INSUFFICIENT_DATA'})
+        baseline=historical_snapshot(connection)
+        names=sorted(x for x in connection.introspection.table_names() if x.startswith('pisciculture_'))
+        def aquatic_rows():
+            with connection.cursor() as cursor:
+                result={}
+                for table in names:
+                    cursor.execute('SELECT * FROM '+table+' ORDER BY id');result[table]=cursor.fetchall()
+                return result
+        old=aquatic_rows()
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'','ELEVAGE_AQUATIC_BACKUP_SHA256':''}):
+            with self.assertRaisesRegex(RuntimeError,'BACKUP_REQUIRED'):upgrade(connection)
+        self.assertNotIn('pisciculture_healthrecord',connection.introspection.table_names())
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'true','ELEVAGE_AQUATIC_BACKUP_SHA256':'a'*64}):upgrade(connection)
+        self.assertEqual(historical_snapshot(connection,baseline),baseline);self.assertEqual(aquatic_rows(),old)
+        self.assertIn('pisciculture_healthrecord',connection.introspection.table_names())
+        with patch.dict(os.environ,{'ELEVAGE_ALLOW_AQUATIC_UPGRADE':'false'}):upgrade(connection)

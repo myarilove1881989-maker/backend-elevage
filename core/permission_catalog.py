@@ -67,6 +67,6 @@ def operation_action(entity_type, operation_type):
 # HTTP-only extension: never add aquatic types to signed legacy grants.
 AQUATIC_PERMISSIONS = frozenset({'aquatic.read', 'aquatic.installations.manage',
     'aquatic.cohorts.manage', 'aquatic.transfers.create', 'aquatic.weights.create',
-    'aquatic.water.create', 'aquatic.water.rules.manage', 'aquatic.losses.create', 'aquatic.feed.purchase', 'aquatic.feed.distribute'})
+    'aquatic.water.create', 'aquatic.water.rules.manage', 'aquatic.losses.create', 'aquatic.feed.purchase', 'aquatic.feed.distribute', 'aquatic.health.observe', 'aquatic.health.treat'})
 PERMISSIONS = PERMISSIONS | AQUATIC_PERMISSIONS
 ASSIGNABLE = ASSIGNABLE | AQUATIC_PERMISSIONS

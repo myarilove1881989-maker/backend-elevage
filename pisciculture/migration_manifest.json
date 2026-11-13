@@ -11,5 +11,8 @@
   "pisciculture/migrations/0007_stockfact_immutable.py": "350c8140034c72a7f88e30cc18d00a0854d12d9dea06f81df7e9a7aa2402c0a2",
   "core/migrations/0054_shared_feed_expenses_common_pool_permissions.py": "c04eaf3a7f93e92638c118d4357462f0fa3fee4cb7c298b5881c3267cfba7637",
   "pisciculture/migrations/0008_feedpurchase_feeddistribution.py": "bc1a38aaf745bde43eb1cc58a08c038f28df839657c9ddbcb5ee1e0b13406fb3",
-  "pisciculture/migrations/0009_feed_facts_and_common_pool.py": "8cfc4989d2e1b6ef9144b58cf42737445761a71e59c300155afba10b9e642907"
+  "pisciculture/migrations/0009_feed_facts_and_common_pool.py": "8cfc4989d2e1b6ef9144b58cf42737445761a71e59c300155afba10b9e642907",
+  "core/migrations/0055_remove_membershippermission_membership_action_known_and_more.py": "b40d08c0091b7efc308320a5e3c53d152a14f66fc18ea024b3274c8b94564793",
+  "pisciculture/migrations/0010_sanitaryproduct_healthrecord_and_more.py": "4b6473ade82f686f9da424d0ff78201ba85ebdaf01cefd4d9e661a7f2e443914",
+  "pisciculture/migrations/0011_health_record_immutable.py": "5b0a9b0f024356dfa9249b362ffd0489219a62bc6d8302ce82079684d84c44cf"
 }

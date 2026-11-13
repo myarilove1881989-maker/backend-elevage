@@ -100,6 +100,7 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
         'species':'aquatic.cohorts.manage','stage':'aquatic.cohorts.manage','cohort':'aquatic.cohorts.manage',
         'cohort_patch':'aquatic.cohorts.manage','transfer':'aquatic.transfers.create'}
     actions['onboarding']='aquatic.cohorts.manage'
+    actions.update(health_observation='aquatic.health.observe',health_treatment='aquatic.health.treat',health_product='aquatic.read',health_correction='aquatic.read')
     actions.update(feed_purchase='aquatic.feed.purchase',feed_distribution='aquatic.feed.distribute',feed_reserve='aquatic.read')
     actions.update(mortality='aquatic.losses.create',reconcile='aquatic.read',inventory='aquatic.read',assign_credit='aquatic.read',stock_cancel='aquatic.read')
     actions.update(weight='aquatic.weights.create',water='aquatic.water.create',observation_rule='aquatic.water.rules.manage')
@@ -109,6 +110,7 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
     farm = Exploitation.objects.select_for_update().get(pk=user.exploitation_id)
     access(user,actions.get(kind,'aquatic.read'),activation=activation)
     if kind=='feed_reserve' and active_membership(user).role!='OWNER':raise PermissionDenied('OWNER_REQUIRED')
+    if kind in ('health_product','health_correction') and active_membership(user).role!='OWNER':raise PermissionDenied('OWNER_REQUIRED')
     if kind=='feed_purchase':
         access(user,'expenses.create')
         if ('new_product' in data or 'new_category' in data) and active_membership(user).role!='OWNER':
@@ -237,6 +239,9 @@ def execute(user, kind, data, *, pk=None, match=None, device=None):
         elif kind in ('mortality','reconcile','inventory','assign_credit','stock_cancel'):
             from .stock_ledger import apply
             result=apply(user,kind,args,identifier,farm)
+        elif kind in ('health_observation','health_treatment','health_correction','health_product'):
+            from .health_services import apply
+            result=apply(user,farm,args,identifier,kind)
         elif kind in ('feed_purchase','feed_distribution','feed_reserve'):
             from .feeding import purchase,distribute,reserve
             result={'feed_purchase':purchase,'feed_distribution':distribute,'feed_reserve':reserve}[kind](user,farm,args,identifier)

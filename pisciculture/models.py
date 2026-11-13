@@ -320,3 +320,79 @@ class FeedDistribution(ImmutableFact):
         if not self.supply_operation.movements.filter(product=self.product,species__isnull=True,lot__isnull=True,
                 quantity=-self.quantity_kg,kind='DISTRIBUTION').exists():
             raise ValidationError('AQUATIC_SINGLE_FEED_DEBIT_REQUIRED')
+
+
+class SanitaryProduct(TenantEntity):
+    """Only products not representable by the existing VACCINE catalogue."""
+    name = models.CharField(max_length=120)
+    type = models.CharField(max_length=12,choices=[('TREATMENT','Traitement'),('OTHER','Autre')])
+    unit = models.CharField(max_length=8,choices=[(v,v) for v in ('dose','mL','L','g','kg','unit')])
+    information = models.CharField(max_length=1000,blank=True)
+    archived = models.BooleanField(default=False)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
+
+    class Meta:
+        constraints=[models.CheckConstraint(name='aquatic_sanitary_product_type',condition=models.Q(type__in=['TREATMENT','OTHER'])),
+            models.CheckConstraint(name='aquatic_sanitary_product_unit',condition=models.Q(unit__in=['dose','mL','L','g','kg','unit'])),
+            models.UniqueConstraint(fields=['exploitation','name'],name='aquatic_sanitary_product_name')]
+
+    def clean(self):
+        super().clean()
+        if self.created_by.exploitation_id!=self.exploitation_id:raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
+
+
+class HealthRecord(ImmutableFact):
+    id = models.UUIDField(primary_key=True,default=uuid.uuid4,editable=False)
+    exploitation = models.ForeignKey('core.Exploitation',on_delete=models.PROTECT)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
+    command_uuid = models.UUIDField()
+    kind = models.CharField(max_length=12,choices=[('OBSERVATION','Observation'),('TREATMENT','Traitement administré')])
+    installation = models.ForeignKey(Installation,on_delete=models.PROTECT)
+    cohort = models.ForeignKey(Cohort,null=True,blank=True,on_delete=models.PROTECT)
+    occurred_at = models.DateTimeField()
+    recorded_at = models.DateTimeField(auto_now_add=True)
+    time_precision = models.CharField(max_length=8,default='DATETIME')
+    business_date = models.DateField(null=True,blank=True)
+    symptoms = models.CharField(max_length=2000,blank=True)
+    behavior = models.CharField(max_length=2000,blank=True)
+    note = models.CharField(max_length=2000,blank=True)
+    supply_product = models.ForeignKey('core.SupplyProduct',null=True,blank=True,on_delete=models.PROTECT)
+    sanitary_product = models.ForeignKey(SanitaryProduct,null=True,blank=True,on_delete=models.PROTECT)
+    product_snapshot = models.JSONField(default=dict,blank=True)
+    quantity = models.DecimalField(max_digits=18,decimal_places=6,null=True,blank=True)
+    unit = models.CharField(max_length=8,blank=True)
+    reason = models.CharField(max_length=1000,blank=True)
+    observation = models.ForeignKey('self',null=True,blank=True,on_delete=models.PROTECT,related_name='treatment_links')
+    ongoing = models.BooleanField(default=False)
+    withdrawal_days = models.PositiveIntegerField(null=True,blank=True)
+    withdrawal_source = models.CharField(max_length=1000,blank=True)
+    withdrawal_until = models.DateTimeField(null=True,blank=True)
+    eligible_cohorts = models.JSONField()
+    species_ids = models.JSONField()
+    scope_snapshot = models.JSONField()
+    root_id = models.UUIDField()
+    supersedes = models.OneToOneField('self',null=True,blank=True,on_delete=models.PROTECT,related_name='successor')
+    correction_reason = models.CharField(max_length=1000,blank=True)
+
+    class Meta:
+        indexes=[models.Index(fields=['exploitation','occurred_at','id'],name='aquatic_health_history_idx')]
+        constraints=[
+            models.CheckConstraint(name='aquatic_health_payload',condition=(
+                (models.Q(kind='OBSERVATION',quantity__isnull=True,supply_product__isnull=True,sanitary_product__isnull=True,unit='',reason='',observation__isnull=True,ongoing=False,withdrawal_days__isnull=True,withdrawal_until__isnull=True,withdrawal_source='') & (~models.Q(symptoms='')|~models.Q(behavior=''))) |
+                (models.Q(kind='TREATMENT',symptoms='',behavior='',quantity__gt=0,quantity__isnull=False) & ~models.Q(reason='') & models.Q(unit__in=['dose','mL','L','g','kg','unit']) & (
+                    models.Q(supply_product__isnull=False,sanitary_product__isnull=True)|models.Q(supply_product__isnull=True,sanitary_product__isnull=False))))),
+            models.CheckConstraint(name='aquatic_health_withdrawal',condition=(
+                models.Q(withdrawal_days__isnull=True,withdrawal_until__isnull=True) |
+                (models.Q(kind='TREATMENT',withdrawal_days__isnull=False,withdrawal_until__isnull=False)&~models.Q(withdrawal_source='')))),
+            models.CheckConstraint(name='aquatic_health_withdrawal_date',condition=models.Q(withdrawal_until__isnull=True)|models.Q(withdrawal_until__gte=models.F('occurred_at'))),
+            models.CheckConstraint(name='aquatic_health_date_precision',condition=(models.Q(time_precision='DATETIME',business_date__isnull=True)|models.Q(time_precision='DATE',business_date__isnull=False))),
+            models.CheckConstraint(name='aquatic_health_correction',condition=(models.Q(supersedes__isnull=True,correction_reason='')|(models.Q(supersedes__isnull=False)&~models.Q(correction_reason='')))),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.actor.exploitation_id!=self.exploitation_id:raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
+        for related in (self.installation,self.cohort,self.supply_product,self.sanitary_product,self.observation,self.supersedes):
+            if related and related.exploitation_id!=self.exploitation_id:raise ValidationError('AQUATIC_REFERENCE_OUTSIDE_FARM')
+        if self.supersedes_id and (self.supersedes.kind!=self.kind or self.supersedes.root_id!=self.root_id):raise ValidationError('HEALTH_CORRECTION_KIND_MISMATCH')
+        if self.supply_product_id and self.supply_product.kind!='VACCINE':raise ValidationError('SANITARY_PRODUCT_REQUIRED')
