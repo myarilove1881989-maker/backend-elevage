@@ -149,8 +149,10 @@ class SourceMigrationContractTests(SimpleTestCase):
         loader = MigrationLoader(None)
         loader.graph.ensure_not_cyclic()
         core = [node for node in loader.disk_migrations if node[0] == "core"]
-        self.assertEqual(len(core), 38)
-        self.assertEqual(loader.graph.leaf_nodes("core"), [("core", "0038_passwordresetlimit")])
+        self.assertEqual(len(core), 58)
+        self.assertIn(("core", "0038_passwordresetlimit"), loader.disk_migrations)
+        self.assertEqual(loader.graph.leaf_nodes("core"), [("core", "0058_remove_membershippermission_membership_action_known_and_more")])
+        self.assertEqual(loader.graph.leaf_nodes("pisciculture"), [("pisciculture", "0016_aquaticexpenselink_aquatictaskplan")])
         self.assertEqual(len([node for node in loader.disk_migrations if node[0] == "token_blacklist"]), 12)
 
     def test_models_match_the_migration_graph(self):
