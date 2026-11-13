@@ -184,6 +184,11 @@ class OfflineMigrationConsolidationTests(OperationFixture, TransactionTestCase):
         from django.utils import timezone
         MembershipPermission.objects.filter(code__endswith='.cancel').delete()
         self.grant.revoked_at=timezone.now();self.grant.save()
+        # Current fixture rights must be representable by the schema under test.
+        executor=MigrationExecutor(connection)
+        historical=executor.loader.project_state([('core','0036_expense_cancellation_immutable')]).apps.get_model('core','MembershipPermission')
+        known=next(c for c in historical._meta.constraints if c.name=='membership_action_known').condition.children[0][1]
+        MembershipPermission.objects.exclude(code__in=known).delete()
         before=list(MembershipPermission.objects.order_by('pk').values_list('membership_id','code'))
         try:
             MigrationExecutor(connection).migrate([('core','0036_expense_cancellation_immutable')])
@@ -196,4 +201,4 @@ class OfflineMigrationConsolidationTests(OperationFixture, TransactionTestCase):
             self.assertFalse(MembershipPermission.objects.filter(code__endswith='.cancel').exists())
         finally:
             executor=MigrationExecutor(connection)
-            executor.migrate(executor.loader.graph.leaf_nodes('core'))
+            executor.migrate(executor.loader.graph.leaf_nodes())
