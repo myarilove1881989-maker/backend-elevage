@@ -534,24 +534,8 @@ def api_create_mouvement(request):
         if not birth.is_valid():
             return Response(birth.errors, status=400)
         data = birth.validated_data
-        nouveau_lot = Lot.objects.create(
-            nom=data['nom_nouveau_lot'],
-            espece=lot.espece,
-            exploitation=lot.exploitation,
-            date_debut=data['date'],
-            date_naissance=data['date'],
-            type_production=data['type_production'],
-            statut_production='ELEVAGE',
-            created_by=request.user,
-        )
-        mouvement = Mouvement.objects.create(
-            lot=nouveau_lot, lot_origine=lot,
-            exploitation=lot.exploitation, created_by=request.user,
-            type_mouvement='NAISSANCE',
-            quantite=data['total_naissances'] - data['mort_nes'],
-            mort_nes=data['mort_nes'],
-            date=data['date'], note=data['note'],
-        )
+        from .births import create_birth
+        nouveau_lot, mouvement = create_birth(request.user, lot, data)
         return Response({
             **MouvementSerializer(mouvement).data,
             'nes_vivants': mouvement.quantite,
@@ -634,6 +618,10 @@ def api_delete_mouvement(request, pk):
         mouvement = Mouvement.objects.select_for_update().get(pk=pk, lot=lot)
     except Mouvement.DoesNotExist:
         return Response({"error": "Introuvable"}, status=404)
+    from husbandry.models import ReproductionEvent
+    from husbandry.services import lot_has_history
+    if ReproductionEvent.objects.filter(movement=mouvement).exists():
+        return Response({'error': 'Cette naissance est liée à un historique reproductif protégé.'}, status=409)
     if mouvement.type_mouvement == 'NAISSANCE' and mouvement.lot_origine_id:
         # This lot was created by this birth. Never cascade-delete its later work.
         dependent_relations = (
@@ -641,7 +629,7 @@ def api_delete_mouvement(request, pk):
             'mouvements_oeufs', 'ventes_oeufs', 'consommations_aliment',
             'pesees_production', 'naissances_issues',
         )
-        if (lot.mouvements.exclude(pk=mouvement.pk).exists() or
+        if (lot_has_history(lot) or lot.mouvements.exclude(pk=mouvement.pk).exists() or
                 any(getattr(lot, name).exists() for name in dependent_relations)):
             return Response({
                 'error': 'Ce nouveau lot a déjà des opérations : suppression impossible.'
@@ -1366,6 +1354,10 @@ def api_delete_achat(request, pk):
         return Response({"error": "Accès interdit"}, status=403)
 
     lot = achat.lot
+
+    from husbandry.services import lot_has_history
+    if lot_has_history(lot):
+        return Response({'error': 'Ce lot possède un historique technique ou reproductif protégé.'}, status=409)
 
     if lot.naissances_issues.exists():
         return Response({

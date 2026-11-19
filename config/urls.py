@@ -8,6 +8,7 @@ from core.admin_exports import export_all_statistics
 from core.health import health
 
 urlpatterns = [
+    path('api/elevage/v1/', include('husbandry.urls')),
     path('api/pisciculture/v1/', include('pisciculture.urls')),
     path('api/health/', health, name='health'),
     path('admin/export-statistics/', admin.site.admin_view(export_all_statistics), name='admin-export-statistics'),

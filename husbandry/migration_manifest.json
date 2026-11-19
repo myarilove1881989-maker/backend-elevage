@@ -1,0 +1,425 @@
+{
+  "baseline": [
+    {
+      "app": "admin",
+      "name": "0001_initial"
+    },
+    {
+      "app": "admin",
+      "name": "0002_logentry_remove_auto_add"
+    },
+    {
+      "app": "admin",
+      "name": "0003_logentry_add_action_flag_choices"
+    },
+    {
+      "app": "auth",
+      "name": "0001_initial"
+    },
+    {
+      "app": "auth",
+      "name": "0002_alter_permission_name_max_length"
+    },
+    {
+      "app": "auth",
+      "name": "0003_alter_user_email_max_length"
+    },
+    {
+      "app": "auth",
+      "name": "0004_alter_user_username_opts"
+    },
+    {
+      "app": "auth",
+      "name": "0005_alter_user_last_login_null"
+    },
+    {
+      "app": "auth",
+      "name": "0006_require_contenttypes_0002"
+    },
+    {
+      "app": "auth",
+      "name": "0007_alter_validators_add_error_messages"
+    },
+    {
+      "app": "auth",
+      "name": "0008_alter_user_username_max_length"
+    },
+    {
+      "app": "auth",
+      "name": "0009_alter_user_last_name_max_length"
+    },
+    {
+      "app": "auth",
+      "name": "0010_alter_group_name_max_length"
+    },
+    {
+      "app": "auth",
+      "name": "0011_update_proxy_permissions"
+    },
+    {
+      "app": "auth",
+      "name": "0012_alter_user_first_name_max_length"
+    },
+    {
+      "app": "contenttypes",
+      "name": "0001_initial"
+    },
+    {
+      "app": "contenttypes",
+      "name": "0002_remove_content_type_name"
+    },
+    {
+      "app": "core",
+      "name": "0001_initial"
+    },
+    {
+      "app": "core",
+      "name": "0002_client_exploitation_mouvement_created_by_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0003_lot_created_by"
+    },
+    {
+      "app": "core",
+      "name": "0004_espece_exploitation"
+    },
+    {
+      "app": "core",
+      "name": "0005_passwordresetcode"
+    },
+    {
+      "app": "core",
+      "name": "0006_seed_species_catalog"
+    },
+    {
+      "app": "core",
+      "name": "0007_client_pays_client_ville"
+    },
+    {
+      "app": "core",
+      "name": "0008_lot_age_arrivee_semaines_lot_date_debut_ponte_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0009_mouvementoeufs_vente_oeufs"
+    },
+    {
+      "app": "core",
+      "name": "0010_generaliser_consommation_aliment"
+    },
+    {
+      "app": "core",
+      "name": "0011_peseeproduction"
+    },
+    {
+      "app": "core",
+      "name": "0012_affectationmouvementoeufs"
+    },
+    {
+      "app": "core",
+      "name": "0013_vente_oeufs_compose_et_lien_mouvement"
+    },
+    {
+      "app": "core",
+      "name": "0014_mouvement_naissance"
+    },
+    {
+      "app": "core",
+      "name": "0015_mouvement_lot_origine"
+    },
+    {
+      "app": "core",
+      "name": "0016_client_created_by_depense_created_by_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0017_bootstrap_memberships"
+    },
+    {
+      "app": "core",
+      "name": "0018_audit_append_only_postgresql"
+    },
+    {
+      "app": "core",
+      "name": "0019_devicetransportchallenge_terrainsubmission_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0020_terrain_declaration_append_only"
+    },
+    {
+      "app": "core",
+      "name": "0021_terrainentitymapping"
+    },
+    {
+      "app": "core",
+      "name": "0022_exploitation_business_revision_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0023_alter_lettrage_montant_alter_payment_montant_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0024_cash_physical_receipt_immutable"
+    },
+    {
+      "app": "core",
+      "name": "0025_terrain_decisions"
+    },
+    {
+      "app": "core",
+      "name": "0026_terrain_decision_append_only"
+    },
+    {
+      "app": "core",
+      "name": "0027_terrain_reversal_compensations"
+    },
+    {
+      "app": "core",
+      "name": "0028_stock_compensation_append_only"
+    },
+    {
+      "app": "core",
+      "name": "0029_terrain_nonstock_reversals"
+    },
+    {
+      "app": "core",
+      "name": "0030_terrain_origin_reversals"
+    },
+    {
+      "app": "core",
+      "name": "0031_terrain_client_archive"
+    },
+    {
+      "app": "core",
+      "name": "0032_membershippermission_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0033_exploitationmembership_membership_role_active_owner_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0034_user_credential_version_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0035_task_cancellation_reason_task_cancelled_at_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0036_expense_cancellation_immutable"
+    },
+    {
+      "app": "core",
+      "name": "0037_offline_business_revocation"
+    },
+    {
+      "app": "core",
+      "name": "0038_passwordresetlimit"
+    },
+    {
+      "app": "core",
+      "name": "0039_supply_foundation"
+    },
+    {
+      "app": "core",
+      "name": "0040_supply_history_protection"
+    },
+    {
+      "app": "core",
+      "name": "0041_supply_foundation"
+    },
+    {
+      "app": "core",
+      "name": "0042_supply_foundation"
+    },
+    {
+      "app": "core",
+      "name": "0043_feed_category_bindings"
+    },
+    {
+      "app": "core",
+      "name": "0044_supply_foundation"
+    },
+    {
+      "app": "core",
+      "name": "0045_feed_link_history"
+    },
+    {
+      "app": "core",
+      "name": "0046_vaccination_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0047_vaccine_category_bindings"
+    },
+    {
+      "app": "core",
+      "name": "0048_healthtask_vaccinationtasklink_healthcommand"
+    },
+    {
+      "app": "core",
+      "name": "0049_health_fact_history"
+    },
+    {
+      "app": "core",
+      "name": "0050_health_responsibles"
+    },
+    {
+      "app": "core",
+      "name": "0051_remove_membershippermission_membership_action_known_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0052_remove_membershippermission_membership_action_known_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0053_remove_membershippermission_membership_action_known_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0054_shared_feed_expenses_common_pool_permissions"
+    },
+    {
+      "app": "core",
+      "name": "0055_remove_membershippermission_membership_action_known_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0056_remove_membershippermission_membership_action_known_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0057_remove_membershippermission_membership_action_known_and_more"
+    },
+    {
+      "app": "core",
+      "name": "0058_remove_membershippermission_membership_action_known_and_more"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0001_initial"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0002_immutable_facts"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0003_observation_observationrule"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0004_observation_immutable"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0005_remove_observation_aquatic_observation_values_and_more"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0006_stockfact"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0007_stockfact_immutable"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0008_feedpurchase_feeddistribution"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0009_feed_facts_and_common_pool"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0010_sanitaryproduct_healthrecord_and_more"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0011_health_record_immutable"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0012_broodgroup_reproduction_breedingfact_and_more"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0013_breeding_facts_immutable"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0014_harvest_harvestmovement_and_more"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0015_harvest_facts_immutable"
+    },
+    {
+      "app": "pisciculture",
+      "name": "0016_aquaticexpenselink_aquatictaskplan"
+    },
+    {
+      "app": "sessions",
+      "name": "0001_initial"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0001_initial"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0002_outstandingtoken_jti_hex"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0003_auto_20171017_2007"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0004_auto_20171017_2013"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0005_remove_outstandingtoken_jti"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0006_auto_20171017_2113"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0007_auto_20171017_2214"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0008_migrate_to_bigautofield"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0010_fix_migrate_to_bigautofield"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0011_linearizes_history"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0012_alter_outstandingtoken_user"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0013_alter_blacklistedtoken_options_and_more"
+    }
+  ],
+  "migrations": {
+    "husbandry/migrations/0001_initial.py": "92254634ef6be4a482d1605bbed6377dcc377ae4a116009df59b4c0059d68810",
+    "husbandry/migrations/0002_immutable_facts.py": "7912d949919391948bf55aa79278ea349f6a90232e92cd7d0e35eea2e81a636d"
+  },
+  "aquatic_manifest_sha256": "baacde6db2613ea75894d8044a03830c48d496c8af726c94faa12a74d9a96a38"
+}
