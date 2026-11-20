@@ -187,3 +187,42 @@ def task_history(request):
     qs=AuditEvent.objects.filter(exploitation_id=request.user.exploitation_id).filter(Q(entity_type='pisciculture.aquatictaskplan',entity_id=str(plan.pk))|Q(entity_type='core.task',entity_id=str(plan.task_id)))
     names=audit_names(qs,request.user.exploitation_id)
     return page(request,qs,lambda x:{'id':x.pk,'actor':x.actor_user_id,'actor_name':names.get(x.actor_user_id,'Auteur conservé'),'date':x.applied_at.isoformat(),'action':x.action,'reason':x.reason_text,'before':x.before_data,'after':x.after_data},'aquatic-agenda-revisions',date='applied_at',recorded='received_at')
+
+
+@endpoint(['GET'])
+@transaction.atomic
+def detail(request):
+    """Read projection only: existing financial ledger, no new accounting rule."""
+    from django.db.models import Sum
+    start, end = scope(request)
+    farm = Exploitation.objects.select_for_update().get(pk=request.user.exploitation_id)
+    access(request.user, 'aquatic.read'); access(request.user, 'finance.read')
+    result = summary_data(request.user, request.query_params, start, end)
+    result.pop('expenses')
+    groups = sale_scope(farm.pk, request.query_params).filter(sale__date__gte=start, sale__date__lte=end).values('harvest__cohort_id', 'harvest__cohort__name').annotate(amount=Sum('sale__montant_total')).order_by('harvest__cohort__name', 'harvest__cohort_id')
+    result['cohorts'] = [{'id':str(r['harvest__cohort_id']), 'name':r['harvest__cohort__name'], 'revenue':money(r['amount']), 'investment':None} for r in groups]
+    result.update(investment=None, investment_reason='NO_QUALIFIED_AQUATIC_INVESTMENT_BASIS', recovery_rate=None, investment_difference=None, business_revision=farm.business_revision)
+    return Response(result)
+
+
+@endpoint(['GET'])
+@transaction.atomic
+def client_ledger(request):
+    """All aquatic invoices through cutoff, including old unpaid invoices.
+
+    One existing sale and only its same-client allocations per row. The existing
+    signed paginator binds the cursor to tenant, filters and business revision.
+    """
+    from django.db.models import Prefetch, F
+    _, end = scope(request)
+    farm = Exploitation.objects.select_for_update().get(pk=request.user.exploitation_id)
+    access(request.user, 'aquatic.read'); access(request.user, 'finance.read')
+    qs = sale_scope(farm.pk, request.query_params).filter(sale__date__lte=end)
+    allocations = Lettrage.objects.filter(payment__exploitation_id=farm.pk, payment__date__lte=end, payment__client_id=F('vente__client_id')).select_related('payment')
+    qs = qs.prefetch_related(Prefetch('sale__lettrages', queryset=allocations, to_attr='_aquatic_client_allocations'))
+    def encode(row):
+        sale = row.sale
+        allocations = sale._aquatic_client_allocations
+        paid = sum((a.montant for a in allocations), Decimal('0'))
+        return {'id':str(row.pk), 'sale_id':sale.pk, 'date':sale.date.isoformat(), 'client':sale.client_id, 'client_name':sale.client.nom, 'client_phone':sale.client.telephone or '', 'amount':money(sale.montant_total), 'paid_as_of':money(paid), 'balance_as_of':money(sale.montant_total-paid), 'payments':[{'id':a.payment_id, 'date':a.payment.date.isoformat(), 'amount':money(a.montant)} for a in allocations], 'occurred_at':row.occurred_at.isoformat()}
+    return page(request, qs, encode, 'aquatic-client-ledger:'+str(farm.business_revision))

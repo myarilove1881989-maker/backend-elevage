@@ -39,3 +39,5 @@ urlpatterns += [path('harvests/',commerce.harvests),path('harvests/<uuid:pk>/',c
 
 from . import finance_views as planning
 urlpatterns += [path('finance-summary/',planning.summary),path('finance-expenses/',planning.expense_list),path('finance-expense-revisions/',planning.expense_edit),path('finance-assignments/',planning.assign),path('finance-categories/',planning.categories),path('finance-revenues/',planning.revenues),path('finance-history/',planning.revisions),path('agenda/',planning.tasks),path('agenda-revisions/',planning.task_edit),path('agenda-status/',planning.task_progress),path('agenda-history/',planning.task_history)]
+
+urlpatterns += [path('finance-detail/',planning.detail),path('finance-client-ledger/',planning.client_ledger)]
