@@ -188,7 +188,6 @@ def task_history(request):
     names=audit_names(qs,request.user.exploitation_id)
     return page(request,qs,lambda x:{'id':x.pk,'actor':x.actor_user_id,'actor_name':names.get(x.actor_user_id,'Auteur conservé'),'date':x.applied_at.isoformat(),'action':x.action,'reason':x.reason_text,'before':x.before_data,'after':x.after_data},'aquatic-agenda-revisions',date='applied_at',recorded='received_at')
 
-
 @endpoint(['GET'])
 @transaction.atomic
 def detail(request):
